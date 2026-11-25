@@ -36,7 +36,14 @@ goes to the terminal (so Ghostty's own bindings still work).
 
 Panes fill row by row with `ceil(sqrt(n))` columns: 1, 1x2, 2+1, 2x2, 3+2,
 3x2, ... The last row stretches to the full width. Tall windows transpose
-the grid into columns. Adding, closing and zooming animate.
+the grid into columns.
+
+Adding, zooming and rebalancing use a short spring that overshoots and
+settles; a new pane launches as a small card out of the pane you were in
+and lands with a flash. Terminal text moves with its pane: each terminal
+takes its final size once, and a uniform scale, sampled along the same
+curve as the frame, keeps it covering the moving box without stretching.
+`GHOSTGRID_SLOW_ANIMATIONS=8` plays everything 8x slower for tuning.
 
 ## How it is put together
 

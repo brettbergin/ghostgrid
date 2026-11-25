@@ -11,9 +11,22 @@ final class GridView: NSView {
     private var zoomed: PaneView?
 
     let gap: CGFloat = 8
-    let duration: TimeInterval = 0.28
-    /// Fast start, soft landing.
-    private let curve = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.25, 1)
+    /// Grid changes (add, zoom, rebalance): a quick spring that overshoots
+    /// a little and settles. Frames and terminal content share one curve so
+    /// the text stays locked to its box.
+    let springDuration: TimeInterval = 0.46 * GridView.slowdown
+    private let springCurve = CubicBezier(0.32, 1.42, 0.6, 1)
+    private var spring: CAMediaTimingFunction {
+        CAMediaTimingFunction(controlPoints: Float(springCurve.x1), Float(springCurve.y1),
+                              Float(springCurve.x2), Float(springCurve.y2))
+    }
+    /// Closing: fast start, soft landing, no overshoot.
+    let closeDuration: TimeInterval = 0.22 * GridView.slowdown
+
+    /// GHOSTGRID_SLOW_ANIMATIONS=8 plays every animation 8x slower, for tuning.
+    static let slowdown: TimeInterval = ProcessInfo.processInfo
+        .environment["GHOSTGRID_SLOW_ANIMATIONS"].flatMap(TimeInterval.init).map { max($0, 1) } ?? 1
+    private let ease = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.25, 1)
 
     var onEmpty: (() -> Void)?
     var onTitleChange: ((String) -> Void)?
@@ -47,18 +60,25 @@ final class GridView: NSView {
         }
         pane.onExit = { [weak self] in self?.remove($0) }
 
+        // Launch out of the pane it was opened from (or the window's centre),
+        // as a small card that springs out to its own cell.
+        let parent = focused.map { $0.layer?.presentation()?.frame ?? $0.frame } ?? bounds
         zoomed = nil
         panes.append(pane)
         let targets = targetFrames()
-
-        // Enter from a slightly smaller box at the pane's own spot, fading in.
         let target = targets[panes.count - 1]
-        pane.frame = target.insetBy(dx: target.width * 0.08, dy: target.height * 0.08)
+        let start = CGSize(width: target.width * 0.3, height: target.height * 0.3)
+        pane.frame = CGRect(
+            x: parent.midX - start.width / 2, y: parent.midY - start.height / 2,
+            width: start.width, height: start.height,
+        )
         pane.alphaValue = 0
-        addSubview(pane)
+        addSubview(pane, positioned: .above, relativeTo: nil)
 
         apply(targets, animated: true)
         pane.focus()
+        // After focus, so it plays over the focus border animation.
+        pane.flashArrival(duration: springDuration + 0.3)
     }
 
     func closeFocused() {
@@ -71,9 +91,10 @@ final class GridView: NSView {
         panes.remove(at: index)
         if zoomed === pane { zoomed = nil }
 
+        pane.shrinkContent(by: 0.84, duration: closeDuration, curve: ease)
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = duration * 0.7
-            context.timingFunction = curve
+            context.duration = closeDuration
+            context.timingFunction = ease
             context.allowsImplicitAnimation = true
             let frame = pane.frame
             pane.animator().frame = frame.insetBy(dx: frame.width * 0.08, dy: frame.height * 0.08)
@@ -154,9 +175,14 @@ final class GridView: NSView {
             update()
             return
         }
+        for (pane, frame) in zip(panes, frames) {
+            // Start from what is on screen, in case an animation is running.
+            let current = pane.layer?.presentation()?.bounds.size ?? pane.frame.size
+            pane.animateContent(from: current, to: frame.size, duration: springDuration, curve: springCurve)
+        }
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = duration
-            context.timingFunction = curve
+            context.duration = springDuration
+            context.timingFunction = spring
             context.allowsImplicitAnimation = true
             update()
         }
