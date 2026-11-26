@@ -6,17 +6,39 @@ A macOS terminal built on Ghostty's engine (libghostty) where every new
 It loads your own `~/.config/ghostty` config, so theme, font, padding,
 opacity and shaders match your Ghostty.
 
+## Install
+
+```bash
+make install   # release build -> /Applications/ghostgrid.app, gg -> ~/.local/bin/gg
+gg             # a pane in the current folder (launches ghostgrid if needed)
+gg ~/code/api  # a pane in that folder; several folders open several panes
+```
+
+`make install` refuses while ghostgrid is running (quit it first) and
+`make uninstall` removes both. Dropping a folder on the Dock icon opens a
+pane there too. `gg` opens the installed app by path, since a dev build
+in `build/` has the same name. The icon is drawn by `Scripts/make-icon.swift`
+at build time. In the dotfiles, `./install.sh ghostgrid` clones, builds
+(with the shader-enabled libghostty when Xcode is installed) and installs.
+
 ## Build and run
 
 Needs macOS 14+ and Swift 6.2+ (the Command Line Tools are enough; full
-Xcode is not required).
+Xcode is only needed for `make libghostty`).
 
 ```bash
 make run     # debug build, assemble build/ghostgrid.app, open it
 make app     # release build of build/ghostgrid.app
-make test    # unit tests (grid layout, config flattening)
+make test    # unit tests (core module: layouts, config, shells, sessions, ...)
 make check   # tests + release app + shellcheck
 ```
+
+## CI
+
+berg-runner (`.berg-runner/ci.yaml`): the `core` job builds the AppKit-free
+`GhostGridCore` module and runs its tests in a Linux Swift container (the
+app target exists only on macOS, see `Package.swift`). The app itself is
+checked by `make check` on a Mac until there is a Mac CI agent.
 
 ## Picking a shell
 
@@ -59,6 +81,9 @@ zsh and bash integration only, so other shells (nushell) run with
 | Cmd+Shift+Enter       | Zoom pane to fill the window and back    |
 | Cmd+] / Cmd+[         | Next / previous pane                     |
 | Cmd+Option+arrows     | Focus the pane in that direction         |
+| Cmd+Shift+arrows      | Swap the focused pane with that neighbour |
+| Cmd+Shift+M           | Make the focused pane the main (first) one |
+| Cmd+Shift+L           | Next layout (Grid, Main + Stack, Columns) |
 | Cmd+N                 | New window                               |
 | Cmd+,                 | ghostgrid Settings                       |
 
@@ -113,6 +138,19 @@ the app's defaults (`com.brettbergin.ghostgrid`) and applied immediately:
   build (custom shaders on) or the published one, and Open / Reload.
 
 Everything about how terminals look stays in the Ghostty config.
+
+## Layouts and reordering
+
+Each window has a layout, in Pane > Layout or cycled with Cmd+Shift+L:
+
+- **Grid**: balanced rows (below).
+- **Main + Stack**: the first pane takes 60% on the left (top in a tall
+  window), the rest stack beside it. Cmd+Shift+M promotes the focused pane.
+- **Columns**: equal columns (rows in a tall window).
+
+Reorder panes by dragging one by its header onto another (the target
+lights up; they swap) or with Cmd+Shift+arrows. The layout is saved with
+the session; new windows use Settings > Grid > New windows use.
 
 ## Grid
 

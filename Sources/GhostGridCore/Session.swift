@@ -1,5 +1,7 @@
-import CoreGraphics
 import Foundation
+#if canImport(CoreGraphics)
+    import CoreGraphics // CGRect's Codable conformance on macOS
+#endif
 
 /// What ghostgrid saves on quit and rebuilds on launch: each window's
 /// frame and its panes in grid order (shell and working directory), plus
@@ -22,12 +24,17 @@ public struct Session: Codable, Equatable, Sendable {
         public var panes: [Pane]
         public var focused: Int?
         public var zoomed: Int?
+        /// nil in sessions saved before layouts existed: grid.
+        public var layout: GridLayout.Mode?
 
-        public init(frame: CGRect, panes: [Pane], focused: Int? = nil, zoomed: Int? = nil) {
+        public init(
+            frame: CGRect, panes: [Pane], focused: Int? = nil, zoomed: Int? = nil, layout: GridLayout.Mode? = nil,
+        ) {
             self.frame = frame
             self.panes = panes
             self.focused = focused
             self.zoomed = zoomed
+            self.layout = layout
         }
     }
 

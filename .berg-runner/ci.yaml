@@ -1,0 +1,29 @@
+# CI on the homelab's berg-runner (github.com/brettbergin/berg-runner). This is the only CI:
+# there are no GitHub Actions workflows in this repository. The server reads this file at the
+# commit under test and reports one commit status per job, `berg-runner/core`. Try it before
+# pushing:
+#
+#   berg-runner ci validate .berg-runner/ci.yaml
+#   berg-runner ci run                # every job, here, in containers
+#
+# What runs where:
+#   - `core`: GhostGridCore and its tests (layout, config flattening, shells, sessions, git
+#     branch, badges) in a Linux container. Package.swift leaves the macOS app out on Linux;
+#     the core module is plain Swift and builds there unchanged. Same tests as `make test`.
+#   - The app itself (AppKit + the libghostty xcframework) builds only on macOS. That needs a
+#     `host: macos` job on a dedicated Mac CI agent (berg-runner README, "Host jobs"), which the
+#     homelab does not have yet; until then `make check` on a Mac is the app's check.
+#   - The image is pinned by digest (multi-arch index; it has an ARM64 build).
+
+on:
+  pull_request: {}
+  push: {branches: [main]}
+
+jobs:
+  core:
+    name: Swift core (build, tests on Linux)
+    image: docker.io/library/swift:6.2@sha256:576698469fd3cf95b2abdeb91a7571d3afcd91806c87283dd01d564803554c0f
+    timeout: 20m
+    steps:
+      - {name: Build, run: swift build --build-tests}
+      - {name: Test, run: swift test --skip-build}

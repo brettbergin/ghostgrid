@@ -15,6 +15,14 @@ final class PaneHeaderView: NSView {
 
     var isFocused = false { didSet { restyle() } }
 
+    enum DragPhase { case began, moved, ended }
+    /// A click on the header (focuses the pane).
+    var onPress: (() -> Void)?
+    /// Dragging the header, in window coordinates (swaps panes on drop).
+    var onDrag: ((DragPhase, NSPoint) -> Void)?
+    private var pressAt: NSPoint?
+    private var isDragging = false
+
     init() {
         super.init(frame: .zero)
         wantsLayer = true
@@ -55,7 +63,38 @@ final class PaneHeaderView: NSView {
     }
 
     override var isFlipped: Bool { true }
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func mouseDown(with event: NSEvent) {
+        pressAt = event.locationInWindow
+        isDragging = false
+        onPress?()
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let start = pressAt else { return }
+        let point = event.locationInWindow
+        if !isDragging {
+            // A few points of travel before a click becomes a drag.
+            guard hypot(point.x - start.x, point.y - start.y) > 4 else { return }
+            isDragging = true
+            NSCursor.closedHand.push()
+            onDrag?(.began, start)
+        }
+        onDrag?(.moved, point)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if isDragging {
+            NSCursor.pop()
+            onDrag?(.ended, event.locationInWindow)
+        }
+        pressAt = nil
+        isDragging = false
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .openHand)
+    }
 
     override func layout() {
         super.layout()

@@ -1,4 +1,7 @@
-import CoreGraphics
+import Foundation
+#if canImport(CoreGraphics)
+    import CoreGraphics // CGRect's Codable conformance on macOS
+#endif
 
 /// Where each pane goes in a balanced grid.
 ///
@@ -7,6 +10,89 @@ import CoreGraphics
 /// it. In a window taller than it is wide the grid is transposed, so panes
 /// stack in columns instead.
 public enum GridLayout {
+    /// How a window arranges its panes.
+    public enum Mode: String, CaseIterable, Codable, Sendable {
+        /// Balanced rows, ceil(sqrt(n)) columns (the default).
+        case grid
+        /// The first pane large on the left (top in a tall window), the rest
+        /// stacked beside it.
+        case mainStack
+        /// Equal columns side by side (rows in a tall window).
+        case columns
+
+        public var title: String {
+            switch self {
+            case .grid: "Grid"
+            case .mainStack: "Main + Stack"
+            case .columns: "Columns"
+            }
+        }
+
+        /// The next mode, for cycling.
+        public var next: Mode {
+            let all = Mode.allCases
+            return all[(all.firstIndex(of: self)! + 1) % all.count]
+        }
+
+        /// The stored value, or grid for anything unknown.
+        public init(stored: String?) {
+            self = stored.flatMap(Mode.init(rawValue:)) ?? .grid
+        }
+    }
+
+    /// The main pane's share of the width (or height) in mainStack.
+    public static let mainShare: CGFloat = 0.6
+
+    public static func frames(count: Int, in bounds: CGRect, gap: CGFloat, mode: Mode) -> [CGRect] {
+        guard count > 0, bounds.width > 0, bounds.height > 0 else { return [] }
+        switch mode {
+        case .grid: return frames(count: count, in: bounds, gap: gap)
+        case .columns: return strip(count: count, in: bounds, gap: gap)
+        case .mainStack: return mainStack(count: count, in: bounds, gap: gap)
+        }
+    }
+
+    /// Lays out in a "wide" space and swaps the axes back for tall windows.
+    private static func oriented(_ bounds: CGRect, _ layout: (CGRect) -> [CGRect]) -> [CGRect] {
+        guard bounds.height > bounds.width else { return layout(bounds) }
+        let swapped = CGRect(x: bounds.minY, y: bounds.minX, width: bounds.height, height: bounds.width)
+        return layout(swapped).map { CGRect(x: $0.minY, y: $0.minX, width: $0.height, height: $0.width) }
+    }
+
+    private static func strip(count: Int, in bounds: CGRect, gap: CGFloat) -> [CGRect] {
+        oriented(bounds) { space in
+            let width = max((space.width - gap * CGFloat(count + 1)) / CGFloat(count), 0)
+            let height = max(space.height - gap * 2, 0)
+            return (0..<count).map { index in
+                CGRect(x: space.minX + gap + CGFloat(index) * (width + gap), y: space.minY + gap,
+                       width: width, height: height)
+            }
+        }
+    }
+
+    private static func mainStack(count: Int, in bounds: CGRect, gap: CGFloat) -> [CGRect] {
+        guard count > 1 else { return frames(count: count, in: bounds, gap: gap) }
+        return oriented(bounds) { space in
+            let inner = space.width - gap * 3
+            let mainWidth = max(inner * mainShare, 0)
+            let stackWidth = max(inner - mainWidth, 0)
+            let main = CGRect(x: space.minX + gap, y: space.minY + gap,
+                              width: mainWidth, height: max(space.height - gap * 2, 0))
+            let stackCount = count - 1
+            let stackHeight = max((space.height - gap * CGFloat(stackCount + 1)) / CGFloat(stackCount), 0)
+            let stack = (0..<stackCount).map { index in
+                CGRect(x: main.maxX + gap, y: space.minY + gap + CGFloat(index) * (stackHeight + gap),
+                       width: stackWidth, height: stackHeight)
+            }
+            return [main] + stack
+        }
+    }
+
+    /// The pane under `point`, if any (for dropping a dragged pane).
+    public static func index(at point: CGPoint, in frames: [CGRect], excluding: Int? = nil) -> Int? {
+        frames.indices.first { $0 != excluding && frames[$0].contains(point) }
+    }
+
     public static func frames(count: Int, in bounds: CGRect, gap: CGFloat) -> [CGRect] {
         guard count > 0, bounds.width > 0, bounds.height > 0 else { return [] }
 

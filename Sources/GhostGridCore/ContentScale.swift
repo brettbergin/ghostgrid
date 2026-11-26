@@ -1,4 +1,7 @@
-import CoreGraphics
+import Foundation
+#if canImport(CoreGraphics)
+    import CoreGraphics // CGRect's Codable conformance on macOS
+#endif
 
 /// A CSS/Core Animation style cubic Bezier timing curve from (0,0) to (1,1).
 /// `progress(at:)` maps elapsed time (0...1) to animation progress, which

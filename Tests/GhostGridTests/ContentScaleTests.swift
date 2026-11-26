@@ -1,4 +1,7 @@
-import CoreGraphics
+import Foundation
+#if canImport(CoreGraphics)
+    import CoreGraphics // CGRect's Codable conformance on macOS
+#endif
 import Testing
 @testable import GhostGridCore
 

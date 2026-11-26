@@ -1,0 +1,18 @@
+#!/bin/sh
+# gg: open a ghostgrid pane in a folder (default: the current one).
+#   gg            pane in $PWD
+#   gg ~/code/api pane in that folder
+#   gg a b        one pane per folder
+# Works whether or not ghostgrid is running: macOS hands the folder to the
+# app (application(_:open:)), which adds the pane to its front window.
+# Installed by `make install` to ~/.local/bin/gg.
+set -eu
+[ "$#" -gt 0 ] || set -- "$PWD"
+for dir in "$@"; do
+  [ -d "$dir" ] || { echo "gg: not a folder: $dir" >&2; exit 1; }
+done
+# The installed app by path: a dev build (build/ghostgrid.app) has the
+# same name and bundle id, and open -a by name may pick it instead.
+APP="${GHOSTGRID_APP:-/Applications/ghostgrid.app}"
+[ -d "$APP" ] || { echo "gg: $APP not found (make install in ~/code/ghostgrid)" >&2; exit 1; }
+exec open -a "$APP" "$@"

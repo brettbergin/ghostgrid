@@ -36,6 +36,11 @@ final class GhostGridSettings: ObservableObject {
         didSet { save(animation.rawValue, "animationStyle") }
     }
 
+    /// The arrangement new windows start with.
+    @Published var defaultLayout: GhostGridCore.GridLayout.Mode {
+        didSet { save(defaultLayout.rawValue, "defaultLayout") }
+    }
+
     /// A header on each pane: shell, folder, git branch.
     @Published var showPaneHeaders: Bool {
         didSet { save(showPaneHeaders, "showPaneHeaders") }
@@ -54,6 +59,7 @@ final class GhostGridSettings: ObservableObject {
         gap = PaneGap.clamped(defaults.object(forKey: "paneGap") as? Double)
         animation = AnimationStyle(stored: defaults.string(forKey: "animationStyle"))
         showPaneHeaders = defaults.object(forKey: "showPaneHeaders") as? Bool ?? true
+        defaultLayout = GhostGridCore.GridLayout.Mode(stored: defaults.string(forKey: "defaultLayout"))
         showActivityBadges = defaults.object(forKey: "showActivityBadges") as? Bool ?? true
     }
 
@@ -131,6 +137,11 @@ struct SettingsView: View {
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
                             .frame(width: 44, alignment: .trailing)
+                    }
+                }
+                Picker("New windows use", selection: $settings.defaultLayout) {
+                    ForEach(GhostGridCore.GridLayout.Mode.allCases, id: \.self) { mode in
+                        Text(mode.title).tag(mode)
                     }
                 }
                 Picker("Animations", selection: $settings.animation) {

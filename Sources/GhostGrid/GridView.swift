@@ -9,6 +9,12 @@ final class GridView: NSView {
     private(set) var panes: [PaneView] = []
     private(set) weak var focused: PaneView?
     private var zoomed: PaneView?
+    /// This window's arrangement (Pane > Layout); new windows start with the
+    /// Settings default.
+    private(set) var mode: GridLayout.Mode = GhostGridSettings.shared.defaultLayout
+    /// A pane being dragged by its header, and where it was grabbed.
+    private var dragging: (pane: PaneView, grab: CGPoint)?
+    private weak var dropTarget: PaneView?
 
     private var settings: GhostGridSettings { .shared }
 
@@ -72,13 +78,13 @@ final class GridView: NSView {
     /// Adds a pane. With `chooseShell` false it starts the remembered shell
     /// right away (falling back to the menu when there is none); with true
     /// it always shows the menu.
-    func addPane(chooseShell: Bool = false) {
+    func addPane(chooseShell: Bool = false, directory: String? = nil) {
         let shells = shells
         let remembered = ShellCatalog.remembered(settings.lastShell, in: shells)
         let startShell = chooseShell || !settings.newPaneUsesLastShell ? nil : remembered
         let pane = PaneView(
             controllerFor: controllerFor,
-            workingDirectory: focused?.workingDirectory,
+            workingDirectory: directory ?? focused?.workingDirectory,
             shells: shells,
             shell: startShell,
             preferred: remembered,
@@ -124,6 +130,7 @@ final class GridView: NSView {
             onTitleChange?(pane.title)
         }
         pane.onWorkingDirectoryChange = { [weak self] _ in self?.onChange?() }
+        pane.onHeaderDrag = { [weak self] pane, phase, point in self?.headerDrag(pane, phase, point) }
         pane.onExit = { [weak self] in self?.remove($0) }
     }
 
@@ -131,7 +138,7 @@ final class GridView: NSView {
 
     /// The panes worth saving, in grid order: those running a shell (a
     /// pane still showing its menu is skipped), with focus and zoom.
-    func snapshot() -> (panes: [Session.Pane], focused: Int?, zoomed: Int?) {
+    func snapshot() -> (panes: [Session.Pane], focused: Int?, zoomed: Int?, layout: GridLayout.Mode) {
         var saved: [Session.Pane] = []
         var focusedIndex: Int?
         var zoomedIndex: Int?
@@ -141,7 +148,7 @@ final class GridView: NSView {
             if pane === zoomed { zoomedIndex = saved.count }
             saved.append(.init(shell: shell.name, workingDirectory: pane.workingDirectory))
         }
-        return (saved, focusedIndex, zoomedIndex)
+        return (saved, focusedIndex, zoomedIndex, mode)
     }
 
     /// Rebuilds a saved window's panes, without animation. A saved shell
@@ -162,6 +169,7 @@ final class GridView: NSView {
             addSubview(pane)
         }
         zoomed = window.zoomed.map { panes[$0] }
+        mode = window.layout ?? .grid
         apply(targetFrames(), animated: false)
         (window.focused.map { panes[$0] } ?? panes.last)?.focus()
     }
@@ -203,7 +211,7 @@ final class GridView: NSView {
 
     func focus(_ direction: GridLayout.Direction) {
         guard zoomed == nil, let focused, let index = panes.firstIndex(of: focused) else { return }
-        let frames = GridLayout.frames(count: panes.count, in: bounds, gap: gap)
+        let frames = GridLayout.frames(count: panes.count, in: bounds, gap: gap, mode: mode)
         if let next = GridLayout.neighbor(of: index, in: frames, direction: direction) {
             panes[next].focus()
         }
@@ -227,6 +235,70 @@ final class GridView: NSView {
         onChange?()
     }
 
+    // MARK: - Reordering and layouts
+
+    /// Swaps the focused pane with its neighbour in `direction`; focus moves
+    /// with the pane.
+    func swapFocused(_ direction: GridLayout.Direction) {
+        guard zoomed == nil, let focused, let index = panes.firstIndex(of: focused) else { return }
+        let frames = GridLayout.frames(count: panes.count, in: bounds, gap: gap, mode: mode)
+        guard let other = GridLayout.neighbor(of: index, in: frames, direction: direction) else { return }
+        swapPanes(index, other)
+    }
+
+    /// Moves the focused pane to the first slot: the big one in Main + Stack.
+    func makeFocusedMain() {
+        guard let focused, let index = panes.firstIndex(of: focused), index != 0 else { return }
+        swapPanes(index, 0)
+    }
+
+    private func swapPanes(_ a: Int, _ b: Int) {
+        panes.swapAt(a, b)
+        apply(targetFrames(), animated: true)
+        focused?.focus()
+        onChange?()
+    }
+
+    func setMode(_ new: GridLayout.Mode) {
+        guard new != mode else { return }
+        mode = new
+        apply(targetFrames(), animated: true)
+        onChange?()
+    }
+
+    /// Drag a pane by its header and drop it on another to swap them. The
+    /// pane follows the pointer; the pane under it lights up as the target.
+    private func headerDrag(_ pane: PaneView, _ phase: PaneHeaderView.DragPhase, _ windowPoint: NSPoint) {
+        guard zoomed == nil, panes.count > 1, let index = panes.firstIndex(of: pane) else { return }
+        let point = convert(windowPoint, from: nil)
+        switch phase {
+        case .began:
+            dragging = (pane, CGPoint(x: point.x - pane.frame.minX, y: point.y - pane.frame.minY))
+            addSubview(pane, positioned: .above, relativeTo: nil)
+            pane.animator().alphaValue = 0.92
+        case .moved:
+            guard let dragging else { return }
+            pane.setFrameOrigin(NSPoint(x: point.x - dragging.grab.x, y: point.y - dragging.grab.y))
+            let target = GridLayout.index(at: point, in: targetFrames(), excluding: index).map { panes[$0] }
+            if target !== dropTarget {
+                dropTarget?.isDropTarget = false
+                target?.isDropTarget = true
+                dropTarget = target
+            }
+        case .ended:
+            dragging = nil
+            pane.animator().alphaValue = 1
+            let target = dropTarget.flatMap { panes.firstIndex(of: $0) }
+            dropTarget?.isDropTarget = false
+            dropTarget = nil
+            if let target {
+                swapPanes(index, target)
+            } else {
+                apply(targetFrames(), animated: true) // spring back
+            }
+        }
+    }
+
     private func paneDidFocus(_ pane: PaneView) {
         defer { onChange?() }
         focused = pane
@@ -239,7 +311,7 @@ final class GridView: NSView {
     // MARK: - Layout
 
     private func targetFrames() -> [CGRect] {
-        let grid = GridLayout.frames(count: panes.count, in: bounds, gap: gap)
+        let grid = GridLayout.frames(count: panes.count, in: bounds, gap: gap, mode: mode)
         guard let zoomed, let zoomIndex = panes.firstIndex(of: zoomed) else { return grid }
         // A zoomed pane takes the whole window; the rest keep their cells.
         var frames = grid

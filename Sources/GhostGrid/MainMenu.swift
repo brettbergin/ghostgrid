@@ -1,4 +1,5 @@
 import AppKit
+import GhostGridCore
 
 /// The menu bar. Its shortcuts are the app's keybindings: GridWindow gives
 /// them priority over Ghostty's, so they work while a terminal has focus.
@@ -39,6 +40,15 @@ enum MainMenu {
             item("Focus Right", #selector(AppDelegate.focusRight(_:)), arrow(NSRightArrowFunctionKey), [.command, .option]),
             item("Focus Up", #selector(AppDelegate.focusUp(_:)), arrow(NSUpArrowFunctionKey), [.command, .option]),
             item("Focus Down", #selector(AppDelegate.focusDown(_:)), arrow(NSDownArrowFunctionKey), [.command, .option]),
+            .separator(),
+            item("Swap Left", #selector(AppDelegate.swapLeft(_:)), arrow(NSLeftArrowFunctionKey), [.command, .shift]),
+            item("Swap Right", #selector(AppDelegate.swapRight(_:)), arrow(NSRightArrowFunctionKey), [.command, .shift]),
+            item("Swap Up", #selector(AppDelegate.swapUp(_:)), arrow(NSUpArrowFunctionKey), [.command, .shift]),
+            item("Swap Down", #selector(AppDelegate.swapDown(_:)), arrow(NSDownArrowFunctionKey), [.command, .shift]),
+            item("Make Main Pane", #selector(AppDelegate.makeMain(_:)), "m", [.command, .shift]),
+            .separator(),
+            layoutMenu(),
+            item("Next Layout", #selector(AppDelegate.cycleLayout(_:)), "l", [.command, .shift]),
         ] + paneNumberItems()))
         let window = submenu("Window", [
             item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"),
@@ -72,6 +82,15 @@ enum MainMenu {
         // A hidden second shortcut for the same command.
         if alternate { item.isHidden = true; item.allowsKeyEquivalentWhenHidden = true }
         return item
+    }
+
+    /// Pane > Layout: one item per mode, the current one checked.
+    private static func layoutMenu() -> NSMenuItem {
+        submenu("Layout", GridLayout.Mode.allCases.enumerated().map { index, mode in
+            let entry = item(mode.title, #selector(AppDelegate.setLayout(_:)))
+            entry.tag = index
+            return entry
+        })
     }
 
     /// Cmd+1...9 focus the pane at that position (Ghostty's goto_tab keys).

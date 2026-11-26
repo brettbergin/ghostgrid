@@ -1,5 +1,7 @@
-import CoreGraphics
 import Foundation
+#if canImport(CoreGraphics)
+    import CoreGraphics // CGRect's Codable conformance on macOS
+#endif
 import Testing
 @testable import GhostGridCore
 
@@ -64,5 +66,14 @@ struct SessionPolicyTests {
 
     @Test func noScreensMeansNoFrame() {
         #expect(SessionPolicy.fit(.zero, screens: []) == nil)
+    }
+}
+
+struct SessionLayoutTests {
+    @Test func layoutRoundTripsAndOldSessionsStillDecode() throws {
+        let session = Session(windows: [.init(frame: .zero, panes: [.init(shell: "zsh", workingDirectory: nil)], layout: .mainStack)])
+        #expect(Session.decode(try session.encoded())?.windows.first?.layout == .mainStack)
+        let old = #"{"version":1,"windows":[{"frame":[[0,0],[10,10]],"panes":[{"shell":"zsh"}]}]}"#
+        #expect(Session.decode(Data(old.utf8))?.windows.first?.layout == nil)
     }
 }

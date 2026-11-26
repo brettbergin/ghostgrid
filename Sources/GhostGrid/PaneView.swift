@@ -65,6 +65,18 @@ final class PaneView: NSView {
     var onFocus: ((PaneView) -> Void)?
     var onTitleChange: ((PaneView) -> Void)?
     var onExit: ((PaneView) -> Void)?
+    /// The header is being dragged (to swap panes), in window coordinates.
+    var onHeaderDrag: ((PaneView, PaneHeaderView.DragPhase, NSPoint) -> Void)?
+
+    /// Lit while a dragged pane hovers over this one.
+    var isDropTarget = false {
+        didSet {
+            guard isDropTarget != oldValue else { return }
+            animateBorder(to: isDropTarget ? Palette.flash : (isFocusedPane ? Palette.focus : Palette.idle),
+                          width: isDropTarget ? 4 : (isFocusedPane ? 2 : 1))
+        }
+    }
+
     /// The shell reported a new working directory (saved in the session).
     var onWorkingDirectoryChange: ((PaneView) -> Void)?
     /// Called when the user picks a shell in this pane's menu.
@@ -362,6 +374,11 @@ final class PaneView: NSView {
         if wantsHeader, header == nil {
             let view = PaneHeaderView()
             view.isFocused = isFocusedPane
+            view.onPress = { [weak self] in self?.focus() }
+            view.onDrag = { [weak self] phase, point in
+                guard let self else { return }
+                onHeaderDrag?(self, phase, point)
+            }
             addSubview(view) // above the terminal and the dim layer
             header = view
         } else if !wantsHeader, let view = header {

@@ -28,6 +28,21 @@ else
   echo "bundle.sh: Ghostty.app themes not found; bundled theme names will not resolve" >&2
 fi
 
+# App icon: drawn by Scripts/make-icon.swift, cached in build/ until the
+# script changes, then sized into an .icns with sips and iconutil.
+ICON_PNG="build/icon/AppIcon.png"
+if [[ ! -f $ICON_PNG || Scripts/make-icon.swift -nt $ICON_PNG ]]; then
+  mkdir -p build/icon
+  swift Scripts/make-icon.swift "$ICON_PNG" >/dev/null
+fi
+ICONSET="build/icon/AppIcon.iconset"
+rm -rf "$ICONSET" && mkdir -p "$ICONSET"
+for px in 16 32 128 256 512; do
+  sips -z $px $px "$ICON_PNG" --out "$ICONSET/icon_${px}x${px}.png" >/dev/null
+  sips -z $((px * 2)) $((px * 2)) "$ICON_PNG" --out "$ICONSET/icon_${px}x${px}@2x.png" >/dev/null
+done
+iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
+
 # Ad-hoc signature so the assembled bundle is consistent for Gatekeeper.
 codesign --force --deep --sign - "$APP" >/dev/null
 echo "Built $APP"

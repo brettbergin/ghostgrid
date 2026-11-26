@@ -3,7 +3,7 @@ import GhostGridCore
 import GhosttyTerminal
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// One Ghostty app instance per shell, created the first time a pane
     /// picks that shell and shared by every pane running it.
     private var controllers: [String: TerminalController] = [:]
@@ -12,18 +12,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// on Reload Configuration.
     private lazy var baseConfig: String? = Self.flattenedConfig()
     private var windows: [GridWindowController] = []
+    /// Folders opened before launch finished (gg, Dock drops), opened as
+    /// panes once the windows exist.
+    private var pendingFolders: [String] = []
+    private var launched = false
 
     func applicationDidFinishLaunching(_: Notification) {
         NSApp.mainMenu = MainMenu.build()
         GhosttyOptions.shared.update(from: baseConfig)
+        launched = true
+        let folders = pendingFolders
+        pendingFolders = []
         if !restoreSession() {
-            newWindow(nil)
+            // A folder opened at launch becomes the first pane.
+            let window = makeWindow()
+            window.showWindow(nil)
+            window.grid.addPane(directory: folders.first)
+            for folder in folders.dropFirst() { window.grid.addPane(directory: folder) }
+        } else {
+            for folder in folders { current?.addPane(directory: folder) }
         }
         NSApp.activate()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_: NSApplication) -> Bool {
         true
+    }
+
+    /// `gg <dir>` (open -a ghostgrid <dir>) and folders dropped on the Dock
+    /// icon: a new pane in that folder, in the front window (a new window
+    /// when there is none). A file opens a pane in its folder.
+    func application(_: NSApplication, open urls: [URL]) {
+        let folders = urls.filter(\.isFileURL).map { url -> String in
+            var isDirectory: ObjCBool = false
+            let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+            return exists && isDirectory.boolValue ? url.path : url.deletingLastPathComponent().path
+        }
+        guard launched else {
+            pendingFolders += folders
+            return
+        }
+        NSApp.activate()
+        for folder in folders {
+            if let grid = current {
+                grid.addPane(directory: folder)
+                grid.window?.makeKeyAndOrderFront(nil)
+            } else {
+                let window = makeWindow()
+                window.showWindow(nil)
+                window.grid.addPane(directory: folder)
+            }
+        }
     }
 
     func applicationWillTerminate(_: Notification) {
@@ -86,7 +125,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let saved: [Session.Window] = windows.compactMap { controller in
             guard let window = controller.window else { return nil }
             let grid = controller.grid.snapshot()
-            return Session.Window(frame: window.frame, panes: grid.panes, focused: grid.focused, zoomed: grid.zoomed)
+            return Session.Window(
+                frame: window.frame, panes: grid.panes, focused: grid.focused, zoomed: grid.zoomed, layout: grid.layout,
+            )
         }
         SessionStore.save(Session(windows: saved))
     }
@@ -111,6 +152,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func focusRight(_: Any?) { current?.focus(.right) }
     @objc func focusUp(_: Any?) { current?.focus(.up) }
     @objc func focusDown(_: Any?) { current?.focus(.down) }
+    @objc func swapLeft(_: Any?) { current?.swapFocused(.left) }
+    @objc func swapRight(_: Any?) { current?.swapFocused(.right) }
+    @objc func swapUp(_: Any?) { current?.swapFocused(.up) }
+    @objc func swapDown(_: Any?) { current?.swapFocused(.down) }
+    @objc func makeMain(_: Any?) { current?.makeFocusedMain() }
+
+    /// Pane > Layout > Grid / Main + Stack / Columns (tag: index in Mode.allCases).
+    @objc func setLayout(_ sender: NSMenuItem) {
+        current?.setMode(GridLayout.Mode.allCases[sender.tag])
+    }
+
+    @objc func cycleLayout(_: Any?) {
+        guard let grid = current else { return }
+        grid.setMode(grid.mode.next)
+    }
+
+    /// Checks the current window's layout in the Layout menu.
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if item.action == #selector(setLayout(_:)) {
+            item.state = current?.mode == GridLayout.Mode.allCases[item.tag] ? .on : .off
+        }
+        return true
+    }
+
     /// Cmd+1...9: the pane at that position (menu item tag, 0-based).
     @objc func focusPaneNumber(_ sender: NSMenuItem) { current?.focusPane(at: sender.tag) }
 
