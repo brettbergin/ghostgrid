@@ -5,7 +5,9 @@ import GhosttyTerminal
 /// The Ghostty app instance whose config runs a given shell.
 typealias ControllerProvider = @MainActor (ShellChoice) -> TerminalController
 
-/// A Ghostty terminal view that reports when it takes keyboard focus.
+/// A Ghostty terminal view that reports when it takes keyboard focus, and
+/// hides the pointer while typing (`mouse-hide-while-typing`, which Ghostty
+/// leaves to the host app).
 @MainActor
 final class PaneTerminalView: AppTerminalView {
     var onFocus: (() -> Void)?
@@ -15,6 +17,19 @@ final class PaneTerminalView: AppTerminalView {
         if accepted { onFocus?() }
         return accepted
     }
+
+    override func keyDown(with event: NSEvent) {
+        super.keyDown(with: event)
+        if GhosttyOptions.shared.mouseHideWhileTyping {
+            NSCursor.setHiddenUntilMouseMoves(true)
+        }
+    }
+}
+
+/// A view that draws but never takes clicks (overlays).
+@MainActor
+final class PassthroughView: NSView {
+    override func hitTest(_: NSPoint) -> NSView? { nil }
 }
 
 /// One grid cell: a rounded container that first shows a menu, then
@@ -32,6 +47,10 @@ final class PaneView: NSView {
     private(set) var shell: ShellChoice?
     /// A command to type at the shell's first prompt (an app from the menu).
     private var pendingCommand: String?
+    /// Dims the pane while it is not focused (`unfocused-split-opacity`).
+    private let dimView = PassthroughView()
+    /// Shown while a search runs (Cmd+F, Ghostty's start_search).
+    private var searchBar: SearchBarView?
 
     var onFocus: ((PaneView) -> Void)?
     var onTitleChange: ((PaneView) -> Void)?
@@ -44,6 +63,7 @@ final class PaneView: NSView {
             guard isFocusedPane != oldValue else { return }
             animateBorder(to: isFocusedPane ? Palette.focus : Palette.idle,
                           width: isFocusedPane ? 2 : 1)
+            updateDim(animated: true)
         }
     }
 
@@ -70,6 +90,14 @@ final class PaneView: NSView {
         layer?.masksToBounds = true
         layer?.borderWidth = 1
         layer?.borderColor = Palette.idle.cgColor
+
+        dimView.wantsLayer = true
+        dimView.alphaValue = 0
+        addSubview(dimView)
+        updateDim(animated: false)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(optionsChanged), name: GhosttyOptions.didChange, object: nil,
+        )
 
         if let shell {
             start(shell)
@@ -130,7 +158,7 @@ final class PaneView: NSView {
         choiceMenu?.removeFromSuperview()
         choiceMenu = menu
         menu.frame = bounds
-        addSubview(menu)
+        addSubview(menu, positioned: .below, relativeTo: dimView)
         window?.makeFirstResponder(menu)
     }
 
@@ -160,7 +188,7 @@ final class PaneView: NSView {
             guard let self else { return }
             onFocus?(self)
         }
-        addSubview(terminal)
+        addSubview(terminal, positioned: .below, relativeTo: dimView)
         self.terminal = terminal
         choiceMenu?.removeFromSuperview()
         choiceMenu = nil
@@ -203,6 +231,8 @@ final class PaneView: NSView {
 
     override func layout() {
         super.layout()
+        dimView.frame = bounds
+        layoutSearchBar()
         // While a resize animates, the terminal already has its final size
         // and a transform scales it to the box; resizing it here would undo that.
         guard contentAnimation == 0 else { return }
@@ -281,7 +311,88 @@ final class PaneView: NSView {
     }
 
     func focus() {
-        window?.makeFirstResponder(content)
+        window?.makeFirstResponder(searchBar?.field ?? content)
+    }
+
+    // MARK: - Unfocused dimming
+
+    @objc private func optionsChanged() {
+        updateDim(animated: false)
+    }
+
+    /// Ghostty fades unfocused splits toward the background by
+    /// 1 - unfocused-split-opacity; panes do the same.
+    private func updateDim(animated: Bool) {
+        let opacity = GhosttyOptions.shared.unfocusedOpacity
+        dimView.layer?.backgroundColor = Palette.paneBackground.withAlphaComponent(1).cgColor
+        let target: CGFloat = isFocusedPane ? 0 : CGFloat(1 - opacity)
+        if animated {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.18
+                dimView.animator().alphaValue = target
+            }
+        } else {
+            dimView.alphaValue = target
+        }
+    }
+
+    // MARK: - Bell
+
+    /// Ghostty's bell: flash the border, and bounce the Dock icon when
+    /// ghostgrid is in the background.
+    private func ringBell() {
+        if let layer {
+            let color = CABasicAnimation(keyPath: "borderColor")
+            color.fromValue = Palette.bell.cgColor
+            color.toValue = (isFocusedPane ? Palette.focus : Palette.idle).cgColor
+            let width = CABasicAnimation(keyPath: "borderWidth")
+            width.fromValue = 4
+            width.toValue = isFocusedPane ? 2 : 1
+            for animation in [color, width] {
+                animation.duration = 0.6
+                animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                layer.add(animation, forKey: "ghostgrid.bell.\(animation.keyPath ?? "")")
+            }
+        }
+        if !NSApp.isActive {
+            NSApp.requestUserAttention(.informationalRequest)
+        }
+    }
+
+    // MARK: - Search
+
+    private func showSearch(needle: String?) {
+        if searchBar == nil {
+            let bar = SearchBarView()
+            bar.onChange = { [weak self] text in
+                _ = self?.terminal?.performBindingAction("search:\(text)")
+            }
+            bar.onNext = { [weak self] in _ = self?.terminal?.performBindingAction("navigate_search:next") }
+            bar.onPrevious = { [weak self] in _ = self?.terminal?.performBindingAction("navigate_search:previous") }
+            bar.onClose = { [weak self] in
+                _ = self?.terminal?.performBindingAction("end_search")
+                self?.hideSearch()
+            }
+            searchBar = bar
+            addSubview(bar)
+            layoutSearchBar()
+        }
+        if let needle, !needle.isEmpty { searchBar?.text = needle }
+        window?.makeFirstResponder(searchBar?.field)
+    }
+
+    private func hideSearch() {
+        guard let bar = searchBar else { return }
+        searchBar = nil
+        bar.removeFromSuperview()
+        window?.makeFirstResponder(terminal)
+    }
+
+    private func layoutSearchBar() {
+        guard let bar = searchBar else { return }
+        let size = bar.fittingSize
+        let width = min(max(size.width, 260), bounds.width - 16)
+        bar.frame = CGRect(x: bounds.maxX - width - 8, y: 8, width: width, height: size.height)
     }
 
     /// A bright border that cools to the focus blue as the pane lands.
@@ -316,7 +427,48 @@ final class PaneView: NSView {
     }
 }
 
-extension PaneView: TerminalSurfaceTitleDelegate, TerminalSurfacePwdDelegate, TerminalSurfaceCloseDelegate {
+extension PaneView: TerminalSurfaceTitleDelegate, TerminalSurfacePwdDelegate, TerminalSurfaceCloseDelegate,
+    TerminalSurfaceOpenURLHandlingDelegate, TerminalSurfaceBellDelegate,
+    TerminalSurfaceDesktopNotificationDelegate, TerminalSurfaceSearchDelegate
+{
+    /// Cmd-click on a link. The package refuses every link on macOS unless
+    /// the host opens it; LinkPolicy vets what the terminal handed over.
+    /// Files Ghostty writes itself (.text/.html) stay with Ghostty.
+    func terminalShouldHandleOpenURL(_ url: String, kind: TerminalOpenURLKind) -> Bool {
+        if kind == .text || kind == .html { return false }
+        if let target = LinkPolicy.url(
+            for: url, workingDirectory: workingDirectory, home: NSHomeDirectory(),
+            fileExists: { FileManager.default.fileExists(atPath: $0) },
+        ) {
+            NSWorkspace.shared.open(target)
+        }
+        return true
+    }
+
+    func terminalDidRingBell() {
+        ringBell()
+    }
+
+    func terminalDidRequestDesktopNotification(title: String, body: String) {
+        Notifier.post(title: title.isEmpty ? self.title : title, body: body)
+    }
+
+    func terminalDidStartSearch(needle: String?) {
+        showSearch(needle: needle)
+    }
+
+    func terminalDidEndSearch() {
+        hideSearch()
+    }
+
+    func terminalDidUpdateSearchTotal(_ total: Int?) {
+        searchBar?.total = total
+    }
+
+    func terminalDidUpdateSearchSelected(_ selected: Int?) {
+        searchBar?.selected = selected
+    }
+
     func terminalDidChangeTitle(_ title: String) {
         self.title = title
         onTitleChange?(self)
@@ -341,6 +493,7 @@ extension PaneView: TerminalSurfaceTitleDelegate, TerminalSurfacePwdDelegate, Te
 /// Catppuccin Mocha accents, matching the dotfiles rice.
 enum Palette {
     static let focus = NSColor(srgbRed: 0x89 / 255, green: 0xB4 / 255, blue: 0xFA / 255, alpha: 1)  // blue
+    static let bell = NSColor(srgbRed: 0xFA / 255, green: 0xB3 / 255, blue: 0x87 / 255, alpha: 1)   // peach
     static let flash = NSColor(srgbRed: 0xB4 / 255, green: 0xBE / 255, blue: 0xFE / 255, alpha: 1) // lavender
     static let text = NSColor(srgbRed: 0xCD / 255, green: 0xD6 / 255, blue: 0xF4 / 255, alpha: 1)
     static let subtext = NSColor(srgbRed: 0xA6 / 255, green: 0xAD / 255, blue: 0xC8 / 255, alpha: 1)

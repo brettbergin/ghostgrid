@@ -7,12 +7,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// One Ghostty app instance per shell, created the first time a pane
     /// picks that shell and shared by every pane running it.
     private var controllers: [String: TerminalController] = [:]
-    /// The user's config with includes inlined, read once at launch.
+    private var controllerShells: [String: ShellChoice] = [:]
+    /// The user's config with includes inlined; read at launch and again
+    /// on Reload Configuration.
     private lazy var baseConfig: String? = Self.flattenedConfig()
     private var windows: [GridWindowController] = []
 
     func applicationDidFinishLaunching(_: Notification) {
         NSApp.mainMenu = MainMenu.build()
+        GhosttyOptions.shared.update(from: baseConfig)
         newWindow(nil)
         NSApp.activate()
     }
@@ -51,6 +54,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func focusRight(_: Any?) { current?.focus(.right) }
     @objc func focusUp(_: Any?) { current?.focus(.up) }
     @objc func focusDown(_: Any?) { current?.focus(.down) }
+    /// Cmd+1...9: the pane at that position (menu item tag, 0-based).
+    @objc func focusPaneNumber(_ sender: NSMenuItem) { current?.focusPane(at: sender.tag) }
+
+    // MARK: - Configuration
+
+    /// Cmd+Shift+,: re-read the user's Ghostty config (includes inlined
+    /// again) into every running shell's Ghostty instance. Ghostty's own
+    /// reload would re-read ghostgrid's generated copy, not the user's files.
+    @objc func reloadConfiguration(_: Any?) {
+        baseConfig = Self.flattenedConfig()
+        GhosttyOptions.shared.update(from: baseConfig)
+        for (name, controller) in controllers {
+            guard let shell = controllerShells[name],
+                  let path = Self.writeConfig(ShellConfig.render(base: baseConfig, choice: shell), name: name)
+            else { continue }
+            if !controller.updateConfigSource(.file(path)), let issue = controller.lastConfigurationIssue {
+                Self.warn("Ghostty config issue (\(name)): \(issue)")
+            }
+        }
+    }
+
+    /// Cmd+,: open the user's Ghostty config, in VS Code when installed.
+    @objc func openConfiguration(_: Any?) {
+        guard let path = Self.configPath() else { return }
+        let url = URL(fileURLWithPath: path)
+        let editor = ["com.microsoft.VSCode", "com.apple.TextEdit"]
+            .lazy.compactMap { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }.first
+        if let editor {
+            NSWorkspace.shared.open([url], withApplicationAt: editor, configuration: NSWorkspace.OpenConfiguration())
+        } else {
+            NSWorkspace.shared.open(url)
+        }
+    }
 
     /// Loads the user's own Ghostty config (theme, font, shaders, keybinds),
     /// so ghostgrid looks like their Ghostty, plus `command` for `shell`.
@@ -64,6 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Self.warn("Ghostty config issue (\(shell.name)): \(issue)")
         }
         controllers[shell.name] = controller
+        controllerShells[shell.name] = shell
         return controller
     }
 

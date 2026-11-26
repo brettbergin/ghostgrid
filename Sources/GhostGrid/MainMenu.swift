@@ -9,6 +9,9 @@ enum MainMenu {
         menu.addItem(submenu("ghostgrid", [
             item("About ghostgrid", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
             .separator(),
+            item("Open Configuration", #selector(AppDelegate.openConfiguration(_:)), ","),
+            item("Reload Configuration", #selector(AppDelegate.reloadConfiguration(_:)), ",", [.command, .shift]),
+            .separator(),
             item("Hide ghostgrid", #selector(NSApplication.hide(_:)), "h"),
             item("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
             item("Show All", #selector(NSApplication.unhideAllApplications(_:))),
@@ -34,11 +37,13 @@ enum MainMenu {
             item("Focus Right", #selector(AppDelegate.focusRight(_:)), arrow(NSRightArrowFunctionKey), [.command, .option]),
             item("Focus Up", #selector(AppDelegate.focusUp(_:)), arrow(NSUpArrowFunctionKey), [.command, .option]),
             item("Focus Down", #selector(AppDelegate.focusDown(_:)), arrow(NSDownArrowFunctionKey), [.command, .option]),
-        ]))
+        ] + paneNumberItems()))
         let window = submenu("Window", [
             item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"),
             item("Zoom", #selector(NSWindow.performZoom(_:))),
             item("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]),
+            // Ghostty's own shortcut for full screen.
+            item("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "\r", alternate: true),
         ])
         menu.addItem(window)
         NSApp.windowsMenu = window.submenu
@@ -65,6 +70,15 @@ enum MainMenu {
         // A hidden second shortcut for the same command.
         if alternate { item.isHidden = true; item.allowsKeyEquivalentWhenHidden = true }
         return item
+    }
+
+    /// Cmd+1...9 focus the pane at that position (Ghostty's goto_tab keys).
+    private static func paneNumberItems() -> [NSMenuItem] {
+        [.separator()] + (1...9).map { number in
+            let entry = item("Focus Pane \(number)", #selector(AppDelegate.focusPaneNumber(_:)), "\(number)")
+            entry.tag = number - 1
+            return entry
+        }
     }
 
     private static func arrow(_ key: Int) -> String {

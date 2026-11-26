@@ -77,6 +77,56 @@ takes its final size once, and a uniform scale, sampled along the same
 curve as the frame, keeps it covering the moving box without stretching.
 `GHOSTGRID_SLOW_ANIMATIONS=8` plays everything 8x slower for tuning.
 
+## Custom shaders (cursor trail and friends)
+
+The published libghostty-spm binary is built with `-Dcustom-shaders=false`,
+so `custom-shader` lines in your Ghostty config do nothing. To get them:
+
+```bash
+make libghostty   # Scripts/build-libghostty.sh
+make run
+```
+
+That checks out libghostty-spm at the version `Package.swift` pins into
+`Vendor/libghostty-spm` (Git-ignored), turns `-Dcustom-shaders` on, builds
+the macOS slice, and `Package.swift` switches to it automatically. Delete
+`Vendor/` to go back to the published binary. It needs full Xcode (the
+Metal compiler; `xcodebuild -downloadComponent MetalToolchain`) and the Zig
+version from Ghostty's `build.zig.zon` (`brew install zig`). While building
+locally SwiftPM rewrites `Package.resolved` without the remote pin; do not
+commit that change.
+
+## Ghostty feature coverage
+
+libghostty does the terminal; Ghostty's macOS app does everything around
+it. ghostgrid has to provide the app half itself, and anything it does not
+provide fails silently. Check this list when adding Ghostty options or
+upgrading libghostty-spm.
+
+| Ghostty feature | In ghostgrid |
+|---|---|
+| Fonts, theme (light/dark), padding, cursor, opacity, scrollback | libghostty |
+| Copy/paste, select all, Cmd+K, font size, prompt jumps, Option as Alt | libghostty |
+| `config-file` includes | ConfigFlattener (package ignores them) |
+| `custom-shader` | needs `make libghostty` (published binary has shaders off) |
+| Per-pane shell / command | one Ghostty instance per shell (package drops it) |
+| Shell integration `cursor`, `title` | package's zsh/bash integration; nushell off |
+| Shell integration `sudo`, `ssh-*` | not available (package's integration) |
+| Cmd+click links | LinkPolicy: http(s), mailto, file, existing paths |
+| Search (Cmd+F, Return / Shift+Return, Esc) | SearchBarView |
+| Bell | border flash; Dock bounce in the background |
+| Desktop notifications (OSC 9 / 777) | macOS notifications (asks permission once) |
+| `mouse-hide-while-typing` | hides the pointer until it moves |
+| `unfocused-split-opacity` | dims unfocused panes |
+| Reload config (Cmd+Shift+,) | re-flattens your files into every shell's instance |
+| Open config (Cmd+,) | opens your config in VS Code (TextEdit otherwise) |
+| Full screen (Cmd+Enter, Ctrl+Cmd+F) | menu |
+| Cmd+1...9 | focus pane N (Ghostty: tab N) |
+| Tabs, splits, `new_window` keybinds | ghostgrid's own grid and menu |
+| `window-save-state` | not yet (session restore) |
+| Quick terminal, `macos-icon*`, `macos-titlebar-style`, `split-divider-color`, `background-blur` | Ghostty app only; ghostgrid uses its own window and glass |
+| Terminal inspector | removed from the package build |
+
 ## How it is put together
 
 - `Sources/GhostGrid`: the AppKit app (window, grid view, panes, menu).

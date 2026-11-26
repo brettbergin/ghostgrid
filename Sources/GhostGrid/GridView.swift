@@ -147,6 +147,16 @@ final class GridView: NSView {
         }
     }
 
+    /// Focuses the pane at `index` (grid order); while zoomed, zooms it.
+    func focusPane(at index: Int) {
+        guard panes.indices.contains(index) else { return }
+        if zoomed != nil {
+            zoomed = panes[index]
+            apply(targetFrames(), animated: true)
+        }
+        panes[index].focus()
+    }
+
     func toggleZoom() {
         guard let focused, panes.count > 1 else { return }
         zoomed = zoomed == nil ? focused : nil
