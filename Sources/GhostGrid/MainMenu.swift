@@ -46,6 +46,7 @@ enum MainMenu {
             item("Swap Up", #selector(AppDelegate.swapUp(_:)), arrow(NSUpArrowFunctionKey), [.command, .shift]),
             item("Swap Down", #selector(AppDelegate.swapDown(_:)), arrow(NSDownArrowFunctionKey), [.command, .shift]),
             item("Make Main Pane", #selector(AppDelegate.makeMain(_:)), "m", [.command, .shift]),
+            item("Equalize Panes", #selector(AppDelegate.equalizePanes(_:)), "=", [.command, .control]),
             .separator(),
             layoutMenu(),
             item("Next Layout", #selector(AppDelegate.cycleLayout(_:)), "l", [.command, .shift]),
