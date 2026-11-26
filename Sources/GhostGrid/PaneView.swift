@@ -55,6 +55,8 @@ final class PaneView: NSView {
     var onFocus: ((PaneView) -> Void)?
     var onTitleChange: ((PaneView) -> Void)?
     var onExit: ((PaneView) -> Void)?
+    /// The shell reported a new working directory (saved in the session).
+    var onWorkingDirectoryChange: ((PaneView) -> Void)?
     /// Called when the user picks a shell in this pane's menu.
     var onShellPicked: ((ShellChoice) -> Void)?
 
@@ -475,7 +477,9 @@ extension PaneView: TerminalSurfaceTitleDelegate, TerminalSurfacePwdDelegate, Te
     }
 
     func terminalDidChangeWorkingDirectory(_ path: String) {
+        let changed = workingDirectory != path
         workingDirectory = path
+        if changed { onWorkingDirectoryChange?(self) }
         // The shell integration reports the directory just before each
         // prompt; the line editor starts reading right after it.
         if pendingCommand != nil {

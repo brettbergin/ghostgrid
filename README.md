@@ -65,6 +65,18 @@ zsh and bash integration only, so other shells (nushell) run with
 These win over Ghostty keybindings with the same keys; every other key
 goes to the terminal (so Ghostty's own bindings still work).
 
+## Session restore
+
+Quit and relaunch, and ghostgrid reopens your windows where they were,
+with the same panes in the same order, each running its shell in the
+folder it was in, plus which pane had focus and which was zoomed.
+Scrollback and running programs are not restored (Ghostty does not
+restore them either). It follows Ghostty's `window-save-state`: `always`
+restores, `never` does not, and `default` follows macOS's "Close windows
+when quitting an application". Closing a window yourself drops it from the
+session. Saved to `~/Library/Application Support/ghostgrid/session.json`
+on quit and shortly after each change, so a crash loses little.
+
 ## Settings
 
 ghostgrid > Settings... (Cmd+,) holds ghostgrid's own options, saved in
@@ -75,7 +87,8 @@ the app's defaults (`com.brettbergin.ghostgrid`) and applied immediately:
 - **Offer apps after choosing zsh** (the app menu).
 - **Gap between panes**: 0-24 pt.
 - **Animations**: Springy (default), Smooth (no overshoot), or Off.
-- **Ghostty**: the config file in use, whether libghostty is the local
+- **Ghostty**: the config file in use, whether windows are restored
+  (from `window-save-state`), whether libghostty is the local
   build (custom shaders on) or the published one, and Open / Reload.
 
 Everything about how terminals look stays in the Ghostty config.
@@ -139,7 +152,7 @@ upgrading libghostty-spm.
 | Full screen (Cmd+Enter, Ctrl+Cmd+F) | menu |
 | Cmd+1...9 | focus pane N (Ghostty: tab N) |
 | Tabs, splits, `new_window` keybinds | ghostgrid's own grid and menu |
-| `window-save-state` | not yet (session restore) |
+| `window-save-state` | session restore (windows, panes, shells, folders, focus, zoom) |
 | Quick terminal, `macos-icon*`, `macos-titlebar-style`, `split-divider-color`, `background-blur` | Ghostty app only; ghostgrid uses its own window and glass |
 | Terminal inspector | removed from the package build |
 

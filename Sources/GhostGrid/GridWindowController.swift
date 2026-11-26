@@ -16,6 +16,8 @@ final class GridWindow: NSWindow {
 final class GridWindowController: NSWindowController, NSWindowDelegate {
     let grid: GridView
     var onClose: ((GridWindowController) -> Void)?
+    /// The window or its grid changed in a way worth saving.
+    var onChange: (() -> Void)?
 
     init(controllerFor: @escaping ControllerProvider) {
         grid = GridView(controllerFor: controllerFor)
@@ -64,6 +66,9 @@ final class GridWindowController: NSWindowController, NSWindowDelegate {
     required init?(coder _: NSCoder) {
         fatalError("init(coder:) is not supported")
     }
+
+    func windowDidMove(_: Notification) { onChange?() }
+    func windowDidResize(_: Notification) { onChange?() }
 
     func windowWillClose(_: Notification) {
         onClose?(self)

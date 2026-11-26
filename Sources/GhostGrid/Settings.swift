@@ -124,6 +124,10 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
                 }
+                LabeledContent("Restore windows") {
+                    Text(SessionRestoreDescription.text)
+                        .foregroundStyle(.secondary)
+                }
                 LabeledContent("libghostty") {
                     Text(LibghosttyBuild.summary)
                         .foregroundStyle(.secondary)
@@ -162,6 +166,19 @@ enum GhosttyConfigLocation {
             if fm.fileExists(atPath: path) { return path }
         }
         return nil
+    }
+}
+
+/// Session restore follows Ghostty's window-save-state.
+@MainActor
+enum SessionRestoreDescription {
+    static var text: String {
+        let value = GhosttyOptions.shared.values.string("window-save-state") ?? "default"
+        let restores = SessionPolicy.shouldRestore(
+            windowSaveState: value,
+            systemKeepsWindows: UserDefaults.standard.bool(forKey: "NSQuitAlwaysKeepsWindows"),
+        )
+        return "\(restores ? "yes" : "no") (window-save-state = \(value))"
     }
 }
 

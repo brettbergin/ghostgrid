@@ -16,7 +16,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_: Notification) {
         NSApp.mainMenu = MainMenu.build()
         GhosttyOptions.shared.update(from: baseConfig)
-        newWindow(nil)
+        if !restoreSession() {
+            newWindow(nil)
+        }
         NSApp.activate()
     }
 
@@ -24,14 +26,69 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         true
     }
 
+    func applicationWillTerminate(_: Notification) {
+        saveSession()
+    }
+
     @objc func newWindow(_: Any?) {
+        let window = makeWindow()
+        window.showWindow(nil)
+        window.grid.addPane()
+    }
+
+    private func makeWindow() -> GridWindowController {
         let window = GridWindowController { [unowned self] in controller(for: $0) }
         window.onClose = { [weak self] closed in
             self?.windows.removeAll { $0 === closed }
+            self?.scheduleSave()
         }
+        window.onChange = { [weak self] in self?.scheduleSave() }
+        window.grid.onChange = { [weak self] in self?.scheduleSave() }
         windows.append(window)
-        window.showWindow(nil)
-        window.grid.addPane()
+        return window
+    }
+
+    // MARK: - Session restore (Ghostty's window-save-state)
+
+    private var saveScheduled = false
+
+    /// Rebuilds the last session's windows when window-save-state allows
+    /// it. False when there was nothing to restore.
+    private func restoreSession() -> Bool {
+        let policy = SessionPolicy.shouldRestore(
+            windowSaveState: GhosttyOptions.shared.values.string("window-save-state"),
+            systemKeepsWindows: UserDefaults.standard.bool(forKey: "NSQuitAlwaysKeepsWindows"),
+        )
+        guard policy, let session = SessionStore.load(), !session.restorable.isEmpty else { return false }
+        let screens = NSScreen.screens.map(\.visibleFrame)
+        for saved in session.restorable {
+            let window = makeWindow()
+            if let frame = SessionPolicy.fit(saved.frame, screens: screens) {
+                window.window?.setFrame(frame, display: false)
+            }
+            window.showWindow(nil)
+            window.grid.restore(saved)
+        }
+        return true
+    }
+
+    /// Saves soon, coalescing bursts (typing cd, dragging a window).
+    private func scheduleSave() {
+        guard !saveScheduled else { return }
+        saveScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            self?.saveScheduled = false
+            self?.saveSession()
+        }
+    }
+
+    private func saveSession() {
+        let saved: [Session.Window] = windows.compactMap { controller in
+            guard let window = controller.window else { return nil }
+            let grid = controller.grid.snapshot()
+            return Session.Window(frame: window.frame, panes: grid.panes, focused: grid.focused, zoomed: grid.zoomed)
+        }
+        SessionStore.save(Session(windows: saved))
     }
 
     // MARK: - Pane commands
@@ -138,11 +195,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private static func warn(_ message: String) {
+    fileprivate static func warn(_ message: String) {
         FileHandle.standardError.write(Data("ghostgrid: \(message)\n".utf8))
     }
 
     private static func configPath() -> String? {
         GhosttyConfigLocation.path
+    }
+}
+
+/// ~/Library/Application Support/ghostgrid/session.json
+@MainActor
+enum SessionStore {
+    static var url: URL? {
+        try? FileManager.default.url(
+            for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true,
+        ).appendingPathComponent("ghostgrid/session.json")
+    }
+
+    static func load() -> Session? {
+        guard let url, let data = try? Data(contentsOf: url) else { return nil }
+        return Session.decode(data)
+    }
+
+    static func save(_ session: Session) {
+        guard let url else { return }
+        do {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try session.encoded().write(to: url, options: .atomic)
+        } catch {
+            AppDelegate.warn("cannot save session: \(error)")
+        }
     }
 }

@@ -37,6 +37,8 @@ final class GridView: NSView {
     }
 
     var onEmpty: (() -> Void)?
+    /// Something worth saving changed (panes, focus, zoom, a folder).
+    var onChange: (() -> Void)?
     var onTitleChange: ((String) -> Void)?
 
     init(controllerFor: @escaping ControllerProvider) {
@@ -82,13 +84,7 @@ final class GridView: NSView {
             preferred: remembered,
             offerApps: startShell == nil && settings.offerAppsAfterZsh,
         )
-        pane.onShellPicked = { [settings] in settings.lastShell = $0.name }
-        pane.onFocus = { [weak self] in self?.paneDidFocus($0) }
-        pane.onTitleChange = { [weak self] pane in
-            guard let self, pane === focused else { return }
-            onTitleChange?(pane.title)
-        }
-        pane.onExit = { [weak self] in self?.remove($0) }
+        wire(pane)
 
         // Launch out of the pane it was opened from (or the window's centre),
         // as a small card that springs out to its own cell.
@@ -107,6 +103,7 @@ final class GridView: NSView {
 
         apply(targets, animated: true)
         pane.focus()
+        onChange?()
         // After focus, so it plays over the focus border animation.
         pane.flashArrival(duration: springDuration + 0.3)
     }
@@ -114,6 +111,59 @@ final class GridView: NSView {
     func closeFocused() {
         guard let focused else { return }
         remove(focused)
+    }
+
+    private func wire(_ pane: PaneView) {
+        pane.onShellPicked = { [weak self] shell in
+            self?.settings.lastShell = shell.name
+            self?.onChange?()
+        }
+        pane.onFocus = { [weak self] in self?.paneDidFocus($0) }
+        pane.onTitleChange = { [weak self] pane in
+            guard let self, pane === focused else { return }
+            onTitleChange?(pane.title)
+        }
+        pane.onWorkingDirectoryChange = { [weak self] _ in self?.onChange?() }
+        pane.onExit = { [weak self] in self?.remove($0) }
+    }
+
+    // MARK: - Session
+
+    /// The panes worth saving, in grid order: those running a shell (a
+    /// pane still showing its menu is skipped), with focus and zoom.
+    func snapshot() -> (panes: [Session.Pane], focused: Int?, zoomed: Int?) {
+        var saved: [Session.Pane] = []
+        var focusedIndex: Int?
+        var zoomedIndex: Int?
+        for pane in panes {
+            guard let shell = pane.shell else { continue }
+            if pane === focused { focusedIndex = saved.count }
+            if pane === zoomed { zoomedIndex = saved.count }
+            saved.append(.init(shell: shell.name, workingDirectory: pane.workingDirectory))
+        }
+        return (saved, focusedIndex, zoomedIndex)
+    }
+
+    /// Rebuilds a saved window's panes, without animation. A saved shell
+    /// that is no longer installed gets the shell menu instead.
+    func restore(_ window: Session.Window) {
+        let shells = shells
+        for saved in window.panes {
+            let shell = shells.first { $0.name == saved.shell && $0.isInstalled }
+            let pane = PaneView(
+                controllerFor: controllerFor,
+                workingDirectory: saved.workingDirectory,
+                shells: shells,
+                shell: shell,
+                preferred: ShellCatalog.remembered(settings.lastShell, in: shells),
+            )
+            wire(pane)
+            panes.append(pane)
+            addSubview(pane)
+        }
+        zoomed = window.zoomed.map { panes[$0] }
+        apply(targetFrames(), animated: false)
+        (window.focused.map { panes[$0] } ?? panes.last)?.focus()
     }
 
     private func remove(_ pane: PaneView) {
@@ -133,6 +183,7 @@ final class GridView: NSView {
             MainActor.assumeIsolated { pane.removeFromSuperview() }
         }
 
+        onChange?()
         guard !panes.isEmpty else {
             onEmpty?()
             return
@@ -173,9 +224,11 @@ final class GridView: NSView {
         zoomed = zoomed == nil ? focused : nil
         apply(targetFrames(), animated: true)
         focused.focus()
+        onChange?()
     }
 
     private func paneDidFocus(_ pane: PaneView) {
+        defer { onChange?() }
         focused = pane
         for candidate in panes {
             candidate.isFocusedPane = candidate === pane
