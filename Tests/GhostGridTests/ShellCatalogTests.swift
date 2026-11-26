@@ -70,3 +70,21 @@ struct ShellIntegrationTests {
         #expect(!bash.contains("shell-integration"))
     }
 }
+
+struct RememberedShellTests {
+    private let choices = ShellCatalog.resolve(home: "/Users/me") { ["/bin/zsh", "/opt/homebrew/bin/nu"].contains($0) }
+
+    @Test func returnsTheRememberedShellWhenInstalled() {
+        #expect(ShellCatalog.remembered("nushell", in: choices)?.executable == "/opt/homebrew/bin/nu")
+    }
+
+    @Test func nothingRememberedMeansNoShortcut() {
+        #expect(ShellCatalog.remembered(nil, in: choices) == nil)
+    }
+
+    @Test func aRememberedShellThatIsGoneFallsBackToTheMenu() {
+        // bash was remembered, then uninstalled (or renamed): show the menu.
+        #expect(ShellCatalog.remembered("bash", in: choices) == nil)
+        #expect(ShellCatalog.remembered("fish", in: choices) == nil)
+    }
+}

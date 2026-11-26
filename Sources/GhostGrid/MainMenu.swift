@@ -19,6 +19,7 @@ enum MainMenu {
             item("New Window", #selector(AppDelegate.newWindow(_:)), "n"),
             item("New Pane", #selector(AppDelegate.newPane(_:)), "t"),
             item("New Pane", #selector(AppDelegate.newPane(_:)), "d", alternate: true),
+            item("New Pane with Shell...", #selector(AppDelegate.newPaneChoosingShell(_:)), "t", [.command, .shift]),
             .separator(),
             item("Close Pane", #selector(AppDelegate.closePane(_:)), "w"),
             item("Close Window", #selector(NSWindow.performClose(_:)), "w", [.command, .shift]),

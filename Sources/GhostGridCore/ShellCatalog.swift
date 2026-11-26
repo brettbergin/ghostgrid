@@ -60,6 +60,13 @@ public enum ShellCatalog {
         }
     }
 
+    /// The shell remembered from the last menu pick, if it is still
+    /// installed; nil means show the menu instead.
+    public static func remembered(_ name: String?, in choices: [ShellChoice]) -> ShellChoice? {
+        guard let name else { return nil }
+        return choices.first { $0.name == name && $0.isInstalled }
+    }
+
     /// The installed choice a key press selects, if any.
     public static func choice(forKey key: String, in choices: [ShellChoice]) -> ShellChoice? {
         choices.first { $0.hotkey == key && $0.isInstalled }

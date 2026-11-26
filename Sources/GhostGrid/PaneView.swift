@@ -34,6 +34,8 @@ final class PaneView: NSView {
     var onFocus: ((PaneView) -> Void)?
     var onTitleChange: ((PaneView) -> Void)?
     var onExit: ((PaneView) -> Void)?
+    /// Called when the user picks a shell in this pane's menu.
+    var onShellPicked: ((ShellChoice) -> Void)?
 
     var isFocusedPane = false {
         didSet {
@@ -46,7 +48,15 @@ final class PaneView: NSView {
     /// Whatever currently fills the pane: the menu, then the terminal.
     private var content: NSView? { terminal ?? picker }
 
-    init(controllerFor: @escaping ControllerProvider, workingDirectory: String?, shells: [ShellChoice]) {
+    /// Starts `shell` at once when given; otherwise shows the shell menu
+    /// with `preferred` highlighted.
+    init(
+        controllerFor: @escaping ControllerProvider,
+        workingDirectory: String?,
+        shells: [ShellChoice],
+        shell: ShellChoice? = nil,
+        preferred: ShellChoice? = nil,
+    ) {
         self.controllerFor = controllerFor
         self.workingDirectory = workingDirectory
         super.init(frame: .zero)
@@ -57,12 +67,19 @@ final class PaneView: NSView {
         layer?.borderWidth = 1
         layer?.borderColor = Palette.idle.cgColor
 
-        let picker = ShellPickerView(choices: shells)
+        if let shell {
+            start(shell)
+            return
+        }
+        let picker = ShellPickerView(choices: shells, preferred: preferred)
         picker.onFocus = { [weak self] in
             guard let self else { return }
             onFocus?(self)
         }
-        picker.onPick = { [weak self] in self?.start($0) }
+        picker.onPick = { [weak self] shell in
+            self?.onShellPicked?(shell)
+            self?.start(shell)
+        }
         picker.onCancel = { [weak self] in
             guard let self else { return }
             onExit?(self)

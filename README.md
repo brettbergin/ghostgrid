@@ -20,7 +20,12 @@ make check   # tests + release app + shellcheck
 
 ## Picking a shell
 
-Every new pane opens with a menu: **1** zsh, **2** nushell, **3** bash.
+The first pane ever, and every Cmd+Shift+T pane, opens with a menu:
+**1** zsh, **2** nushell, **3** bash. ghostgrid remembers your pick (also
+across launches), so Cmd+T and new windows start that shell directly;
+the menu opens with it highlighted. If the remembered shell is no longer
+installed, Cmd+T shows the menu instead. Forget it with
+`defaults delete com.brettbergin.ghostgrid lastShell`.
 Press the number to start that shell at once, or use Up/Down and Return;
 Escape cancels and closes the pane. A shell that is not installed is shown
 dimmed and skipped (nushell is looked for in `/opt/homebrew/bin/nu`,
@@ -38,7 +43,8 @@ zsh and bash integration only, so other shells (nushell) run with
 
 | Keys                  | Action                                   |
 |-----------------------|------------------------------------------|
-| Cmd+T / Cmd+D         | New pane (joins the grid, inherits cwd)  |
+| Cmd+T / Cmd+D         | New pane with your last shell (inherits cwd) |
+| Cmd+Shift+T           | New pane, choosing the shell from the menu |
 | Cmd+W                 | Close pane                               |
 | Cmd+Shift+Enter       | Zoom pane to fill the window and back    |
 | Cmd+] / Cmd+[         | Next / previous pane                     |

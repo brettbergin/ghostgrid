@@ -57,8 +57,20 @@ final class GridView: NSView {
 
     // MARK: - Panes
 
-    func addPane() {
-        let pane = PaneView(controllerFor: controllerFor, workingDirectory: focused?.workingDirectory, shells: shells)
+    /// Adds a pane. With `chooseShell` false it starts the remembered shell
+    /// right away (falling back to the menu when there is none); with true
+    /// it always shows the menu.
+    func addPane(chooseShell: Bool = false) {
+        let shells = shells
+        let remembered = ShellCatalog.remembered(ShellMemory.last, in: shells)
+        let pane = PaneView(
+            controllerFor: controllerFor,
+            workingDirectory: focused?.workingDirectory,
+            shells: shells,
+            shell: chooseShell ? nil : remembered,
+            preferred: remembered,
+        )
+        pane.onShellPicked = { ShellMemory.last = $0.name }
         pane.onFocus = { [weak self] in self?.paneDidFocus($0) }
         pane.onTitleChange = { [weak self] pane in
             guard let self, pane === focused else { return }

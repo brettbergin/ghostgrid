@@ -42,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func newPane(_: Any?) { current?.addPane() }
+    @objc func newPaneChoosingShell(_: Any?) { current?.addPane(chooseShell: true) }
     @objc func closePane(_: Any?) { current?.closeFocused() }
     @objc func toggleZoom(_: Any?) { current?.toggleZoom() }
     @objc func nextPane(_: Any?) { current?.focusNext(1) }

@@ -15,9 +15,12 @@ final class ShellPickerView: NSView {
     private var rows: [RowView] = []
     private let card = NSView()
 
-    init(choices: [ShellChoice]) {
+    /// `preferred` (the remembered shell) starts highlighted, so Return
+    /// picks it again.
+    init(choices: [ShellChoice], preferred: ShellChoice? = nil) {
         self.choices = choices
-        selected = choices.firstIndex(where: \.isInstalled) ?? 0
+        selected = preferred.flatMap { choices.firstIndex(of: $0) }
+            ?? choices.firstIndex(where: \.isInstalled) ?? 0
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = Palette.paneBackground.cgColor
