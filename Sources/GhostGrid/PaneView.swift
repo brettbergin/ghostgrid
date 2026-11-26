@@ -94,6 +94,37 @@ final class PaneView: NSView {
     /// Commands run in this pane, read from its output (commands as blocks).
     let blocks = CommandBlockStore()
     private var blocksPanel: NSHostingView<CommandBlocksView>?
+    /// When the shell last printed anything (attention grid).
+    private(set) var lastOutputAt: Date?
+    /// Something here wants you (a bell, a notification, a command that
+    /// finished while you looked away), until you focus the pane. Kept
+    /// whether or not badges show it.
+    private(set) var needsYou = false {
+        didSet { if needsYou != oldValue { onAttentionChange?(self) } }
+    }
+    /// needsYou changed: the grid re-weighs at once instead of on its tick.
+    var onAttentionChange: ((PaneView) -> Void)?
+
+    /// When the pane last changed size. A shell redraws its prompt after a
+    /// resize; that is not news, and counting it would let the attention
+    /// grid's own moves keep the pane "active".
+    private var resizedAt = Date.distantPast
+
+    override func setFrameSize(_ newSize: NSSize) {
+        if newSize != frame.size { resizedAt = Date() }
+        super.setFrameSize(newSize)
+    }
+
+    private func outputArrived() {
+        let now = Date()
+        if now.timeIntervalSince(resizedAt) > 1 { lastOutputAt = now }
+    }
+
+    /// How much this pane wants room right now (attention grid).
+    func attentionLevel(now: Date) -> AttentionLevel {
+        AttentionGrid.level(lastOutput: lastOutputAt, waiting: needsYou, focused: isFocusedPane, now: now)
+    }
+
     private var explainPanel: ExplainPanelView?
     private var explainTask: Task<Void, Never>?
     /// Dims the pane while it is not focused (`unfocused-split-opacity`).
@@ -162,7 +193,10 @@ final class PaneView: NSView {
             restyleBorder()
             updateDim(animated: true)
             header?.isFocused = isFocusedPane
-            if isFocusedPane { activity = nil }
+            if isFocusedPane {
+                activity = nil
+                needsYou = false
+            }
         }
     }
 
@@ -368,6 +402,7 @@ final class PaneView: NSView {
         client.onOutput = { [weak self] data in
             host.receive(data)
             self?.blocks.feed(data)
+            self?.outputArrived()
         }
         client.onExit = { [weak self] code in
             guard let self else { return }
@@ -632,7 +667,9 @@ final class PaneView: NSView {
     }
 
     private func note(_ new: PaneActivity) {
-        guard settings.showActivityBadges, !isWatched else { return }
+        guard !isWatched else { return }
+        needsYou = true
+        guard settings.showActivityBadges else { return }
         activity = new
     }
 
@@ -915,6 +952,8 @@ extension PaneView: TerminalSurfaceTitleDelegate, TerminalSurfacePwdDelegate, Te
 
     func terminalDidRequestDesktopNotification(title: String, body: String) {
         Notifier.post(title: title.isEmpty ? self.title : title, body: body)
+        // Agents (Claude Code and friends) notify when they wait for you.
+        if !isWatched { needsYou = true }
     }
 
     func terminalDidStartSearch(needle: String?) {

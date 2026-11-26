@@ -52,6 +52,7 @@ enum MainMenu {
             item("Swap Down", #selector(AppDelegate.swapDown(_:)), arrow(NSDownArrowFunctionKey), [.command, .shift]),
             item("Make Main Pane", #selector(AppDelegate.makeMain(_:)), "m", [.command, .shift]),
             item("Equalize Panes", #selector(AppDelegate.equalizePanes(_:)), "=", [.command, .control]),
+            item("Attention Grid", #selector(AppDelegate.toggleAttentionGrid(_:)), "a", [.command, .control]),
             .separator(),
             layoutMenu(),
             item("Next Layout", #selector(AppDelegate.cycleLayout(_:)), "l", [.command, .shift]),

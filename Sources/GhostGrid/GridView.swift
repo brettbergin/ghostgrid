@@ -15,6 +15,14 @@ final class GridView: NSView {
     /// Divider adjustments (resizable panes); nil: balanced. Weights that do
     /// not fit the pane count or mode are ignored by GridLayout.
     private(set) var weights: LayoutWeights?
+    /// The weights come from the attention grid, not from a drag (so they
+    /// are not saved with the session).
+    private var weightsFromAttention = false
+    /// A divider was dragged: attention leaves this window's sizes alone
+    /// until Equalize Panes.
+    private var attentionPaused = false
+    private var lastLevels: [AttentionLevel] = []
+    private var attentionTimer: Timer?
     /// The divider being dragged, the weights it started from, and where.
     private var resizing: (kind: Splitter.Kind, vertical: Bool, start: NSPoint, weights: LayoutWeights?)?
     /// The smallest a pane can be dragged to, in points.
@@ -76,7 +84,43 @@ final class GridView: NSView {
 
     /// A new gap or animation style applies to open grids right away.
     @objc private func settingsChanged() {
+        if !settings.attentionGrid, weightsFromAttention {
+            weights = nil
+            weightsFromAttention = false
+        }
+        lastLevels = []
         apply(targetFrames(), animated: true)
+        updateAttention()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        attentionTimer?.invalidate()
+        attentionTimer = nil
+        guard window != nil else { return }
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.updateAttention() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        attentionTimer = timer
+    }
+
+    // MARK: - Attention grid
+
+    /// Re-weighs the panes by attention (Settings > Grid), moving only when
+    /// some pane's level changed, with a soft ease rather than the spring.
+    private func updateAttention() {
+        guard settings.attentionGrid, !attentionPaused, zoomed == nil, dragging == nil, resizing == nil,
+              panes.count > 1
+        else { return }
+        let levels = panes.map { $0.attentionLevel(now: Date()) }
+        guard levels != lastLevels else { return }
+        lastLevels = levels
+        let new = AttentionGrid.weights(for: levels, mode: mode)
+        guard new != weights else { return }
+        weights = new
+        weightsFromAttention = true
+        apply(targetFrames(), animated: true, gentle: true)
     }
 
     @available(*, unavailable)
@@ -116,6 +160,8 @@ final class GridView: NSView {
         let parent = focused.map { $0.layer?.presentation()?.frame ?? $0.frame } ?? bounds
         zoomed = nil
         weights = nil // a new pane: back to balanced
+        weightsFromAttention = false
+        lastLevels = []
         panes.append(pane)
         let targets = targetFrames()
         let target = targets[panes.count - 1]
@@ -151,6 +197,7 @@ final class GridView: NSView {
         }
         pane.onWorkingDirectoryChange = { [weak self] _ in self?.onChange?() }
         pane.onSessionChange = { [weak self] _ in self?.onChange?() }
+        pane.onAttentionChange = { [weak self] _ in self?.updateAttention() }
         pane.onHeaderDrag = { [weak self] pane, phase, point in self?.headerDrag(pane, phase, point) }
         pane.onExit = { [weak self] in self?.remove($0) }
         pane.isBroadcasting = broadcasting
@@ -180,7 +227,8 @@ final class GridView: NSView {
         }
         // Weights only make sense for the full pane set; a pane still in its
         // menu is not saved, so they would not fit.
-        return (saved, focusedIndex, zoomedIndex, mode, saved.count == panes.count ? weights : nil)
+        let kept = saved.count == panes.count && !weightsFromAttention ? weights : nil
+        return (saved, focusedIndex, zoomedIndex, mode, kept)
     }
 
     /// Rebuilds a saved window's panes, without animation. A saved shell
@@ -219,6 +267,8 @@ final class GridView: NSView {
         pane.endShell()
         panes.remove(at: index)
         weights = nil // one pane fewer: back to balanced
+        weightsFromAttention = false
+        lastLevels = []
         if zoomed === pane { zoomed = nil }
 
         pane.shrinkContent(by: 0.84, duration: closeDuration, curve: ease)
@@ -305,6 +355,8 @@ final class GridView: NSView {
         guard new != mode else { return }
         mode = new
         weights = nil
+        weightsFromAttention = false
+        lastLevels = []
         apply(targetFrames(), animated: true)
         onChange?()
     }
@@ -346,8 +398,15 @@ final class GridView: NSView {
 
     /// Pane > Equalize Panes (Cmd+Ctrl+=), or a double-click on a divider.
     func equalize() {
-        guard weights != nil else { return }
+        let wasPaused = attentionPaused
+        attentionPaused = false
+        lastLevels = []
+        guard weights != nil else {
+            if wasPaused { updateAttention() }
+            return
+        }
         weights = nil
+        weightsFromAttention = false
         apply(targetFrames(), animated: true)
         onChange?()
     }
@@ -383,6 +442,9 @@ final class GridView: NSView {
             return
         }
         resizing = (divider.kind, divider.rect.height > divider.rect.width, point, weights)
+        // Your sizes win over the attention grid until Equalize Panes.
+        attentionPaused = true
+        weightsFromAttention = false
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -423,12 +485,16 @@ final class GridView: NSView {
         return frames
     }
 
-    private func apply(_ frames: [CGRect], animated requested: Bool) {
+    /// The attention grid's soft move: slower, no overshoot.
+    private static let gentleCurve = CubicBezier(0.4, 0, 0.2, 1)
+
+    private func apply(_ frames: [CGRect], animated requested: Bool, gentle: Bool = false) {
         guard frames.count == panes.count else { return }
         window?.invalidateCursorRects(for: self)
         // Animations off in Settings: set frames directly. (Going through
         // animator() would still animate, with AppKit's default duration.)
-        let curve = requested ? springCurve : nil
+        let curve = requested ? (gentle && springCurve != nil ? Self.gentleCurve : springCurve) : nil
+        let duration = gentle ? 0.6 * GridView.slowdown : springDuration
         let animated = curve != nil
         let update = {
             for (pane, frame) in zip(self.panes, frames) {
@@ -452,10 +518,10 @@ final class GridView: NSView {
         for (pane, frame) in zip(panes, frames) {
             // Start from what is on screen, in case an animation is running.
             let current = pane.layer?.presentation()?.bounds.size ?? pane.frame.size
-            pane.animateContent(from: current, to: frame.size, duration: springDuration, curve: curve)
+            pane.animateContent(from: current, to: frame.size, duration: duration, curve: curve)
         }
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = springDuration
+            context.duration = duration
             context.timingFunction = timing(curve)
             context.allowsImplicitAnimation = true
             update()

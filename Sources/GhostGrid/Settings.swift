@@ -79,6 +79,11 @@ final class GhostGridSettings: ObservableObject {
         didSet { save(modelName, "modelName") }
     }
 
+    /// Panes that need you or just printed grow; quiet ones shrink.
+    @Published var attentionGrid: Bool {
+        didSet { save(attentionGrid, "attentionGrid") }
+    }
+
     private init() {
         newPaneUsesLastShell = defaults.object(forKey: "newPaneUsesLastShell") as? Bool ?? true
         offerAppsAfterZsh = defaults.object(forKey: "offerAppsAfterZsh") as? Bool ?? true
@@ -91,6 +96,7 @@ final class GhostGridSettings: ObservableObject {
         showActivityBadges = defaults.object(forKey: "showActivityBadges") as? Bool ?? true
         keepShellsRunning = defaults.object(forKey: "keepShellsRunning") as? Bool ?? true
         explainFailures = defaults.object(forKey: "explainFailures") as? Bool ?? true
+        attentionGrid = defaults.object(forKey: "attentionGrid") as? Bool ?? true
         modelEndpoint = defaults.string(forKey: "modelEndpoint") ?? "http://localhost:1234/v1"
         modelName = defaults.string(forKey: "modelName") ?? ""
     }
@@ -205,6 +211,7 @@ struct SettingsView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+                Toggle("Attention grid: grow panes that need you, shrink idle ones", isOn: $settings.attentionGrid)
             }
 
             Section {
