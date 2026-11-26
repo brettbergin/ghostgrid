@@ -14,6 +14,8 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp "$BIN/GhostGrid" "$APP/Contents/MacOS/GhostGrid"
+# The helper that keeps shells running after the app quits.
+cp "$BIN/ghostgrid-sessiond" "$APP/Contents/MacOS/ghostgrid-sessiond"
 # SwiftPM resource bundles (GhosttyTerminal's shell integration, terminfo).
 # The package looks for them in Contents/Resources.
 cp -R "$BIN"/*.bundle "$APP/Contents/Resources/"

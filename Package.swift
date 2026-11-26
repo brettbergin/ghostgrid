@@ -10,6 +10,13 @@ let useLocalLibghostty = FileManager.default.fileExists(
     atPath: "\(Context.packageDirectory)/\(localLibghostty)/BinaryTarget/GhosttyKit.xcframework"
 )
 
+// On macOS the tests also drive the built ghostgrid-sessiond end to end.
+#if os(macOS)
+    let testDependencies: [Target.Dependency] = ["GhostGridCore", "ghostgrid-sessiond"]
+#else
+    let testDependencies: [Target.Dependency] = ["GhostGridCore"]
+#endif
+
 // The core module and its tests are plain Swift and also build on Linux,
 // where CI runs them in a container (.berg-runner/ci.yaml). The app itself
 // needs AppKit and the libghostty xcframework, so it exists only on macOS.
@@ -21,7 +28,7 @@ let coreTargets: [Target] = [
     ),
     .testTarget(
         name: "GhostGridTests",
-        dependencies: ["GhostGridCore"],
+        dependencies: testDependencies,
         path: "Tests/GhostGridTests"
     ),
 ]
@@ -36,6 +43,17 @@ let coreTargets: [Target] = [
             : .package(url: "https://github.com/Lakr233/libghostty-spm.git", exact: "2.2.2026112401"),
     ]
     let appTargets: [Target] = [
+        // Owns every pane's shell so shells outlive the app (shells that
+        // survive quitting); bundled next to the app's executable.
+        .executableTarget(
+            name: "ghostgrid-sessiond",
+            dependencies: ["GhostGridCore"],
+            path: "Sources/ghostgrid-sessiond",
+            // Single-threaded: everything runs on the main dispatch queue,
+            // which Swift 6's checker cannot see through DispatchSource
+            // handlers.
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
         .executableTarget(
             name: "GhostGrid",
             dependencies: [

@@ -65,8 +65,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
     }
 
+    /// Quitting, as opposed to closing windows one by one.
+    private var terminating = false
+
+    func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
+        terminating = true
+        return .terminateNow
+    }
+
     func applicationWillTerminate(_: Notification) {
+        terminating = true
         saveSession()
+        if !GhostGridSettings.shared.keepShellsRunning {
+            windows.forEach { $0.grid.endAllShells() }
+        }
     }
 
     @objc func newWindow(_: Any?) {
@@ -78,6 +90,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private func makeWindow() -> GridWindowController {
         let window = GridWindowController { [unowned self] in controller(for: $0) }
         window.onClose = { [weak self] closed in
+            // Closing a window ends its shells; quitting may keep them.
+            if self?.terminating == false { closed.grid.endAllShells() }
             self?.windows.removeAll { $0 === closed }
             self?.scheduleSave()
         }
@@ -94,11 +108,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// Rebuilds the last session's windows when window-save-state allows
     /// it. False when there was nothing to restore.
     private func restoreSession() -> Bool {
+        guard let session = SessionStore.load() else { return false }
         let policy = SessionPolicy.shouldRestore(
             windowSaveState: GhosttyOptions.shared.values.string("window-save-state"),
             systemKeepsWindows: UserDefaults.standard.bool(forKey: "NSQuitAlwaysKeepsWindows"),
+            keepsShells: !session.liveSessionIDs.isEmpty,
         )
-        guard policy, let session = SessionStore.load(), !session.restorable.isEmpty else { return false }
+        guard policy else {
+            // Kept shells nobody will come back to.
+            SessionClient.terminate(session.liveSessionIDs)
+            return false
+        }
+        guard !session.restorable.isEmpty else { return false }
         let screens = NSScreen.screens.map(\.visibleFrame)
         for saved in session.restorable {
             let window = makeWindow()

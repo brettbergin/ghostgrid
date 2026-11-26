@@ -47,6 +47,11 @@ final class PaneView: NSView {
     private(set) var shell: ShellChoice?
     /// A command to type at the shell's first prompt (an app from the menu).
     private var pendingCommand: String?
+    /// The shell's id in ghostgrid-sessiond, while it runs there.
+    private(set) var sessionID: String?
+    /// The connection to sessiond carrying this pane's shell.
+    private var client: SessionClient?
+    private var startedAt = Date()
     /// Dims the pane while it is not focused (`unfocused-split-opacity`).
     private let dimView = PassthroughView()
     /// Shown while a search runs (Cmd+F, Ghostty's start_search).
@@ -81,6 +86,8 @@ final class PaneView: NSView {
     var onWorkingDirectoryChange: ((PaneView) -> Void)?
     /// Called when the user picks a shell in this pane's menu.
     var onShellPicked: ((ShellChoice) -> Void)?
+    /// The pane's shell in sessiond changed (started, replaced, ended).
+    var onSessionChange: ((PaneView) -> Void)?
 
     var isFocusedPane = false {
         didSet {
@@ -106,9 +113,11 @@ final class PaneView: NSView {
         shell: ShellChoice? = nil,
         preferred: ShellChoice? = nil,
         offerApps: Bool = false,
+        sessionID: String? = nil,
     ) {
         self.controllerFor = controllerFor
         self.workingDirectory = workingDirectory
+        self.sessionID = sessionID
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 10
@@ -208,7 +217,7 @@ final class PaneView: NSView {
         let terminal = PaneTerminalView(frame: bounds)
         terminal.delegate = self
         terminal.configuration = TerminalSurfaceOptions(
-            backend: .exec,
+            backend: sessionBackend(for: shell) ?? .exec,
             workingDirectory: workingDirectory,
             envVars: [
                 "GHOSTGRID": "1",
@@ -240,6 +249,111 @@ final class PaneView: NSView {
                 self?.sendPendingCommand()
             }
         }
+    }
+
+    // MARK: - Shell in sessiond
+
+    /// The pane's shell lives in ghostgrid-sessiond, not under the app: a
+    /// host-managed terminal whose bytes go over the helper's socket. It
+    /// reattaches to `sessionID` when the pane was restored with one.
+    /// nil when the helper cannot be reached: the pane then runs its shell
+    /// directly, as before (it ends when the app quits).
+    private func sessionBackend(for shell: ShellChoice) -> TerminalSessionBackend? {
+        let client = SessionClient()
+        let pipe = SessionPipe(client: client)
+        let host = InMemoryTerminalSession(
+            write: { data in
+                DispatchQueue.main.async { MainActor.assumeIsolated { pipe.client?.send(.input(data)) } }
+            },
+            resize: { viewport in
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        pipe.client?.resize(
+                            columns: viewport.columns, rows: viewport.rows,
+                            width: UInt16(clamping: viewport.widthPixels), height: UInt16(clamping: viewport.heightPixels),
+                        )
+                    }
+                }
+            },
+        )
+        let attaching = sessionID
+        var first: SessionMessage?
+        if let attaching {
+            first = .attach(id: attaching)
+        } else if let launch = makeLaunch(shell) {
+            sessionID = launch.id
+            client.pendingCreate = launch // started at the pane's first size
+        } else {
+            return nil
+        }
+        client.onAttached = { replay in host.receiveReplay(replay) }
+        client.onOutput = { data in host.receive(data) }
+        client.onExit = { [weak self] code in
+            guard let self else { return }
+            sessionID = nil
+            onSessionChange?(self)
+            let runtime = UInt64(max(0, Date().timeIntervalSince(startedAt)) * 1000)
+            host.finish(exitCode: UInt32(bitPattern: code), runtimeMilliseconds: runtime)
+        }
+        client.onFailure = { [weak self, weak client] reason in
+            guard let self, let client else { return }
+            if reason == "no such session", attaching != nil, sessionID == attaching, let launch = makeLaunch(shell) {
+                // The kept shell is gone (a reboot, or it exited while
+                // ghostgrid was closed): start a fresh one in its place.
+                sessionID = launch.id
+                onSessionChange?(self)
+                client.pendingCreate = launch
+                client.startPending()
+                return
+            }
+            // Another ghostgrid took the shell, or the helper went away:
+            // say so in the pane and leave the shell alone.
+            sessionID = nil
+            self.client = nil
+            client.close()
+            onSessionChange?(self)
+            host.receive(Data("\r\n\u{1B}[2m[ghostgrid: \(reason)]\u{1B}[0m\r\n".utf8))
+        }
+        guard client.open(first) else {
+            sessionID = attaching
+            return nil
+        }
+        self.client = client
+        startedAt = Date()
+        if attaching == nil {
+            onSessionChange?(self)
+            // Should the pane never report a size, start anyway.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak client] in client?.startPending() }
+        }
+        return .inMemory(host)
+    }
+
+    private func makeLaunch(_ shell: ShellChoice) -> SessionLaunch? {
+        let values = GhosttyOptions.shared.values
+        let resources = ShellLaunch.Resources(
+            ghostty: GhosttyRuntimeResources.directoryURL?.path ?? "",
+            terminfo: GhosttyRuntimeResources.terminfoDirectoryURL?.path ?? "",
+            features: ShellLaunch.features(config: values.string("shell-integration-features")),
+            integration: ShellLaunch.usesIntegration(shell: shell.name, config: values.string("shell-integration")),
+        )
+        var base = ProcessInfo.processInfo.environment
+        // The app's own launch context, not the shell's.
+        for key in ["__CFBundleIdentifier", "XPC_SERVICE_NAME", "XPC_FLAGS", "TERM_SESSION_ID", "OLDPWD", "SHLVL", "_"] {
+            base[key] = nil
+        }
+        return ShellLaunch.launch(
+            id: UUID().uuidString, shell: shell, base: base, resources: resources,
+            workingDirectory: workingDirectory ?? NSHomeDirectory(),
+        )
+    }
+
+    /// Ends the pane's shell for good (closing the pane or its window).
+    func endShell() {
+        guard let client else { return }
+        if sessionID != nil { client.send(.terminate) }
+        client.close()
+        self.client = nil
+        sessionID = nil
     }
 
     /// Types the pending command as keystrokes and presses Enter.

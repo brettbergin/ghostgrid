@@ -46,11 +46,20 @@ public struct Session: Codable, Equatable, Sendable {
         /// ShellChoice name ("zsh", "nushell", "bash").
         public var shell: String
         public var workingDirectory: String?
+        /// The shell still running in ghostgrid-sessiond (shells that
+        /// survive quitting); nil when it was not kept.
+        public var sessionID: String?
 
-        public init(shell: String, workingDirectory: String?) {
+        public init(shell: String, workingDirectory: String?, sessionID: String? = nil) {
             self.shell = shell
             self.workingDirectory = workingDirectory
+            self.sessionID = sessionID
         }
+    }
+
+    /// Every pane's kept shell, in window and grid order.
+    public var liveSessionIDs: [String] {
+        windows.flatMap { $0.panes.compactMap(\.sessionID) }
     }
 
     /// Windows worth restoring: with at least one pane, and focus/zoom
@@ -85,6 +94,14 @@ public struct Session: Codable, Equatable, Sendable {
 /// (or unset) follows macOS's "Close windows when quitting an application"
 /// setting, which ghostgrid sees as `systemKeepsWindows`.
 public enum SessionPolicy {
+    /// With shells kept running across quits, the windows come back to
+    /// show them whatever macOS's setting says; only "never" opts out
+    /// (and then the kept shells are ended).
+    public static func shouldRestore(windowSaveState: String?, systemKeepsWindows: Bool, keepsShells: Bool) -> Bool {
+        if keepsShells, windowSaveState?.lowercased() != "never" { return true }
+        return shouldRestore(windowSaveState: windowSaveState, systemKeepsWindows: systemKeepsWindows)
+    }
+
     public static func shouldRestore(windowSaveState: String?, systemKeepsWindows: Bool) -> Bool {
         switch windowSaveState?.lowercased() {
         case "always": true
