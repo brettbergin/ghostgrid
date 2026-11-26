@@ -12,6 +12,13 @@ final class GridView: NSView {
     /// This window's arrangement (Pane > Layout); new windows start with the
     /// Settings default.
     private(set) var mode: GridLayout.Mode = GhostGridSettings.shared.defaultLayout
+    /// Divider adjustments (resizable panes); nil: balanced. Weights that do
+    /// not fit the pane count or mode are ignored by GridLayout.
+    private(set) var weights: LayoutWeights?
+    /// The divider being dragged, the weights it started from, and where.
+    private var resizing: (kind: Splitter.Kind, vertical: Bool, start: NSPoint, weights: LayoutWeights?)?
+    /// The smallest a pane can be dragged to, in points.
+    private let minimumPaneSize: CGFloat = 100
     /// A pane being dragged by its header, and where it was grabbed.
     private var dragging: (pane: PaneView, grab: CGPoint)?
     private weak var dropTarget: PaneView?
@@ -96,6 +103,7 @@ final class GridView: NSView {
         // as a small card that springs out to its own cell.
         let parent = focused.map { $0.layer?.presentation()?.frame ?? $0.frame } ?? bounds
         zoomed = nil
+        weights = nil // a new pane: back to balanced
         panes.append(pane)
         let targets = targetFrames()
         let target = targets[panes.count - 1]
@@ -138,7 +146,7 @@ final class GridView: NSView {
 
     /// The panes worth saving, in grid order: those running a shell (a
     /// pane still showing its menu is skipped), with focus and zoom.
-    func snapshot() -> (panes: [Session.Pane], focused: Int?, zoomed: Int?, layout: GridLayout.Mode) {
+    func snapshot() -> (panes: [Session.Pane], focused: Int?, zoomed: Int?, layout: GridLayout.Mode, weights: LayoutWeights?) {
         var saved: [Session.Pane] = []
         var focusedIndex: Int?
         var zoomedIndex: Int?
@@ -148,7 +156,9 @@ final class GridView: NSView {
             if pane === zoomed { zoomedIndex = saved.count }
             saved.append(.init(shell: shell.name, workingDirectory: pane.workingDirectory))
         }
-        return (saved, focusedIndex, zoomedIndex, mode)
+        // Weights only make sense for the full pane set; a pane still in its
+        // menu is not saved, so they would not fit.
+        return (saved, focusedIndex, zoomedIndex, mode, saved.count == panes.count ? weights : nil)
     }
 
     /// Rebuilds a saved window's panes, without animation. A saved shell
@@ -170,6 +180,7 @@ final class GridView: NSView {
         }
         zoomed = window.zoomed.map { panes[$0] }
         mode = window.layout ?? .grid
+        weights = window.weights
         apply(targetFrames(), animated: false)
         (window.focused.map { panes[$0] } ?? panes.last)?.focus()
     }
@@ -177,6 +188,7 @@ final class GridView: NSView {
     private func remove(_ pane: PaneView) {
         guard let index = panes.firstIndex(of: pane) else { return }
         panes.remove(at: index)
+        weights = nil // one pane fewer: back to balanced
         if zoomed === pane { zoomed = nil }
 
         pane.shrinkContent(by: 0.84, duration: closeDuration, curve: ease)
@@ -211,7 +223,7 @@ final class GridView: NSView {
 
     func focus(_ direction: GridLayout.Direction) {
         guard zoomed == nil, let focused, let index = panes.firstIndex(of: focused) else { return }
-        let frames = GridLayout.frames(count: panes.count, in: bounds, gap: gap, mode: mode)
+        let frames = GridLayout.frames(count: panes.count, in: bounds, gap: gap, mode: mode, weights: weights)
         if let next = GridLayout.neighbor(of: index, in: frames, direction: direction) {
             panes[next].focus()
         }
@@ -241,7 +253,7 @@ final class GridView: NSView {
     /// with the pane.
     func swapFocused(_ direction: GridLayout.Direction) {
         guard zoomed == nil, let focused, let index = panes.firstIndex(of: focused) else { return }
-        let frames = GridLayout.frames(count: panes.count, in: bounds, gap: gap, mode: mode)
+        let frames = GridLayout.frames(count: panes.count, in: bounds, gap: gap, mode: mode, weights: weights)
         guard let other = GridLayout.neighbor(of: index, in: frames, direction: direction) else { return }
         swapPanes(index, other)
     }
@@ -262,6 +274,7 @@ final class GridView: NSView {
     func setMode(_ new: GridLayout.Mode) {
         guard new != mode else { return }
         mode = new
+        weights = nil
         apply(targetFrames(), animated: true)
         onChange?()
     }
@@ -299,6 +312,67 @@ final class GridView: NSView {
         }
     }
 
+    // MARK: - Resizing (drag the gap between panes)
+
+    /// Pane > Equalize Panes (Cmd+Ctrl+=), or a double-click on a divider.
+    func equalize() {
+        guard weights != nil else { return }
+        weights = nil
+        apply(targetFrames(), animated: true)
+        onChange?()
+    }
+
+    private var splitters: [Splitter] {
+        guard zoomed == nil, dragging == nil else { return [] }
+        return GridLayout.splitters(count: panes.count, in: bounds, gap: gap, mode: mode, weights: weights)
+    }
+
+    private func splitter(at point: NSPoint) -> Splitter? {
+        splitters.first { $0.rect.contains(point) }
+    }
+
+    /// Dividers win over the panes they overlap (they are wider than a
+    /// small gap), so the edge of a pane can be grabbed.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        if let superview, splitter(at: convert(point, from: superview)) != nil { return self }
+        return super.hitTest(point)
+    }
+
+    override func resetCursorRects() {
+        for divider in splitters {
+            let vertical = divider.rect.height > divider.rect.width
+            addCursorRect(divider.rect, cursor: vertical ? .resizeLeftRight : .resizeUpDown)
+        }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        guard let divider = splitter(at: point) else { return super.mouseDown(with: event) }
+        if event.clickCount == 2 {
+            equalize()
+            return
+        }
+        resizing = (divider.kind, divider.rect.height > divider.rect.width, point, weights)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let resizing else { return super.mouseDragged(with: event) }
+        let point = convert(event.locationInWindow, from: nil)
+        let delta = resizing.vertical ? point.x - resizing.start.x : point.y - resizing.start.y
+        weights = GridLayout.drag(
+            resizing.kind, by: delta, count: panes.count, in: bounds, gap: gap, mode: mode,
+            weights: resizing.weights, minimum: minimumPaneSize,
+        )
+        apply(targetFrames(), animated: false)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard resizing != nil else { return super.mouseUp(with: event) }
+        resizing = nil
+        window?.invalidateCursorRects(for: self)
+        onChange?()
+    }
+
     private func paneDidFocus(_ pane: PaneView) {
         defer { onChange?() }
         focused = pane
@@ -311,7 +385,7 @@ final class GridView: NSView {
     // MARK: - Layout
 
     private func targetFrames() -> [CGRect] {
-        let grid = GridLayout.frames(count: panes.count, in: bounds, gap: gap, mode: mode)
+        let grid = GridLayout.frames(count: panes.count, in: bounds, gap: gap, mode: mode, weights: weights)
         guard let zoomed, let zoomIndex = panes.firstIndex(of: zoomed) else { return grid }
         // A zoomed pane takes the whole window; the rest keep their cells.
         var frames = grid
@@ -321,6 +395,7 @@ final class GridView: NSView {
 
     private func apply(_ frames: [CGRect], animated requested: Bool) {
         guard frames.count == panes.count else { return }
+        window?.invalidateCursorRects(for: self)
         // Animations off in Settings: set frames directly. (Going through
         // animator() would still animate, with AppKit's default duration.)
         let curve = requested ? springCurve : nil

@@ -26,10 +26,14 @@ public struct Session: Codable, Equatable, Sendable {
         public var zoomed: Int?
         /// nil in sessions saved before layouts existed: grid.
         public var layout: GridLayout.Mode?
+        /// Divider adjustments (resizable panes); nil: balanced.
+        public var weights: LayoutWeights?
 
         public init(
             frame: CGRect, panes: [Pane], focused: Int? = nil, zoomed: Int? = nil, layout: GridLayout.Mode? = nil,
+            weights: LayoutWeights? = nil,
         ) {
+            self.weights = weights
             self.frame = frame
             self.panes = panes
             self.focused = focused

@@ -127,6 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             let grid = controller.grid.snapshot()
             return Session.Window(
                 frame: window.frame, panes: grid.panes, focused: grid.focused, zoomed: grid.zoomed, layout: grid.layout,
+                weights: grid.weights,
             )
         }
         SessionStore.save(Session(windows: saved))
@@ -157,6 +158,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     @objc func swapUp(_: Any?) { current?.swapFocused(.up) }
     @objc func swapDown(_: Any?) { current?.swapFocused(.down) }
     @objc func makeMain(_: Any?) { current?.makeFocusedMain() }
+    @objc func equalizePanes(_: Any?) { current?.equalize() }
 
     /// Pane > Layout > Grid / Main + Stack / Columns (tag: index in Mode.allCases).
     @objc func setLayout(_ sender: NSMenuItem) {
