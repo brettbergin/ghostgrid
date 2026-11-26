@@ -55,4 +55,49 @@ struct ShellHookTests {
             #expect(output == "\u{1B}]633;E;" + CommandLineReport.escape(command) + "\u{07}", "\(shell): \(command)")
         }
     }
+
+    /// Whether the system's own terminal database (all that a setuid
+    /// program like macOS's /usr/bin/top reads) knows xterm-ghostty.
+    static var systemKnowsGhostty: Bool {
+        ["/usr/share/terminfo/78/xterm-ghostty", "/usr/share/terminfo/x/xterm-ghostty", "/lib/terminfo/x/xterm-ghostty"]
+            .contains { FileManager.default.fileExists(atPath: $0) }
+    }
+
+    /// Runs `command` in `shell` after the hook, with a stand-in `top` on
+    /// PATH that prints the TERM it was given.
+    private func runAfterHook(shell: String, term: String, command: String) throws -> String {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("gg-hooks-\(UUID().uuidString)").path
+        defer { try? FileManager.default.removeItem(atPath: directory) }
+        try ShellHooks.install(in: directory)
+        let bin = directory + "/bin"
+        try FileManager.default.createDirectory(atPath: bin, withIntermediateDirectories: true)
+        try Data("#!/bin/sh\nprintf '%s' \"$TERM\"\n".utf8).write(to: URL(fileURLWithPath: bin + "/top"))
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: bin + "/top")
+        let script = shell.hasSuffix("zsh") ? directory + "/zsh/.zshenv" : directory + "/bash/ghostgrid.bash"
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: shell)
+        process.arguments = (shell.hasSuffix("zsh") ? ["-f"] : ["--norc", "--noprofile"])
+            + ["-c", "source \"$1\"; \(command)", "sh", script]
+        process.environment = ["GHOSTGRID_GHOSTTY_ZDOTDIR": "/nonexistent", "GHOSTGRID_GHOSTTY_ENV": "/dev/null",
+                               "PATH": bin + ":/usr/bin:/bin", "TERM": term]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        process.waitUntilExit()
+        return String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+    }
+
+    /// Setuid programs ignore TERMINFO, so macOS's top cannot find
+    /// xterm-ghostty ("Error opening terminal"); it runs as xterm-256color.
+    @Test(arguments: ["/bin/zsh", "/bin/bash", "/opt/homebrew/bin/bash", "/usr/bin/bash"])
+    func topRunsWithATerminalTheSystemKnows(shell: String) throws {
+        guard FileManager.default.isExecutableFile(atPath: shell), !Self.systemKnowsGhostty else { return }
+        #expect(try runAfterHook(shell: shell, term: "xterm-ghostty", command: "top") == "xterm-256color", "\(shell)")
+        #expect(try runAfterHook(shell: shell, term: "xterm-ghostty", command: "top; printf ' %s' \"$TERM\"")
+            == "xterm-256color xterm-ghostty", "\(shell): the shell keeps its own TERM")
+        #expect(try runAfterHook(shell: shell, term: "screen-256color", command: "top") == "screen-256color",
+                "\(shell): another terminal type is left alone (tmux, ssh)")
+    }
 }
+
