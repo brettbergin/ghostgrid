@@ -57,12 +57,17 @@ system bash 3.2). Shells start as login shells, so `~/.zprofile` loads.
 ### Apps in a new zsh pane
 
 Picking **zsh** from the Cmd+Shift+T menu opens a second menu of apps to
-start in it: **1** opencode, **2** claude, **3** btop, **4** lazygit,
-**5** yazi (as `y`, so quitting with q leaves the pane in that folder).
+start in it. The list is yours, in Settings > zsh app launcher: each app is
+a name, the command typed at the prompt (aliases and functions work) and a
+description; add, remove and reorder up to 9 (keys 1-9 in list order). It
+starts with **1** opencode, **2** claude, **3** btop, **4** lazygit and
+**5** yazi (as `y`, so quitting with q leaves the pane in that folder);
+Reset to Defaults brings those back, and an empty list means plain zsh.
 Press the number to launch; **Escape** drops you into a plain zsh. The
 app's command is typed at zsh's first prompt, so it lands in history and
-quitting the app leaves you at the zsh prompt in the same pane. Apps that
-are not installed are dimmed. Cmd+T never shows this menu.
+quitting the app leaves you at the zsh prompt in the same pane. An app whose
+program is not found is marked "(not found)" but stays pickable, since the
+command may be an alias. Cmd+T never shows this menu.
 
 This libghostty build ignores a per-pane command, so each shell gets its
 own Ghostty app instance whose config ends with `command = <shell> -l`

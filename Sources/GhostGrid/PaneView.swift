@@ -163,8 +163,13 @@ final class PaneView: NSView {
     }
 
     private func showAppMenu(for shell: ShellChoice) {
-        let apps = LaunchCatalog.resolve(home: NSHomeDirectory()) {
+        let apps = LaunchCatalog.resolve(settings.launcherEntries, home: NSHomeDirectory()) {
             FileManager.default.isExecutableFile(atPath: $0)
+        }
+        // An emptied launcher list (Settings) means a plain zsh.
+        guard !apps.isEmpty else {
+            start(shell)
+            return
         }
         let menu = ChoiceMenuView(
             title: "\(shell.name): launch an app",

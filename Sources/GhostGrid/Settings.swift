@@ -36,6 +36,12 @@ final class GhostGridSettings: ObservableObject {
         didSet { save(animation.rawValue, "animationStyle") }
     }
 
+    /// The apps offered after choosing zsh (Settings > zsh app launcher),
+    /// pre-filled with LaunchCatalog.defaults.
+    @Published var launcherEntries: [LauncherEntry] {
+        didSet { save(LaunchCatalog.encode(launcherEntries), "launcherEntries") }
+    }
+
     /// The arrangement new windows start with.
     @Published var defaultLayout: GhostGridCore.GridLayout.Mode {
         didSet { save(defaultLayout.rawValue, "defaultLayout") }
@@ -60,6 +66,7 @@ final class GhostGridSettings: ObservableObject {
         animation = AnimationStyle(stored: defaults.string(forKey: "animationStyle"))
         showPaneHeaders = defaults.object(forKey: "showPaneHeaders") as? Bool ?? true
         defaultLayout = GhostGridCore.GridLayout.Mode(stored: defaults.string(forKey: "defaultLayout"))
+        launcherEntries = LaunchCatalog.decode(defaults.data(forKey: "launcherEntries"))
         showActivityBadges = defaults.object(forKey: "showActivityBadges") as? Bool ?? true
     }
 
@@ -77,7 +84,8 @@ final class SettingsWindowController: NSWindowController {
     private init() {
         let window = NSWindow(contentViewController: NSHostingController(rootView: SettingsView()))
         window.title = "ghostgrid Settings"
-        window.styleMask = [.titled, .closable]
+        window.styleMask = [.titled, .closable, .resizable]
+        window.setContentSize(NSSize(width: 560, height: 720))
         window.isReleasedWhenClosed = false
         super.init(window: window)
     }
@@ -117,6 +125,8 @@ struct SettingsView: View {
                 }
                 Toggle("Offer apps after choosing zsh (Cmd+Shift+T)", isOn: $settings.offerAppsAfterZsh)
             }
+
+            LauncherSettingsSection(settings: settings)
 
             Section {
                 Toggle("Show pane headers (shell, folder, git branch)", isOn: $settings.showPaneHeaders)
@@ -182,8 +192,9 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 520)
-        .fixedSize()
+        // A fixed starting size: the form scrolls, since the launcher list
+        // can make it taller than the screen.
+        .frame(minWidth: 540, idealWidth: 560, minHeight: 420, idealHeight: 720)
     }
 }
 
@@ -225,5 +236,94 @@ enum LibghosttyBuild {
         #else
             "published build, custom shaders off (make libghostty)"
         #endif
+    }
+}
+
+/// Settings > zsh app launcher: the apps the launcher offers after choosing
+/// zsh on Cmd+Shift+T. Each row is a name, the command typed at the prompt,
+/// and a description; keys 1-9 follow the order here.
+struct LauncherSettingsSection: View {
+    @ObservedObject var settings: GhostGridSettings
+
+    var body: some View {
+        Section {
+            if settings.launcherEntries.isEmpty {
+                Text("No apps: choosing zsh opens a plain shell.")
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(Array(settings.launcherEntries.enumerated()), id: \.element.id) { index, _ in
+                LauncherRow(
+                    hotkey: index < LaunchCatalog.maximumEntries ? "\(index + 1)" : "-",
+                    entry: $settings.launcherEntries[index],
+                    canMoveUp: index > 0,
+                    canMoveDown: index < settings.launcherEntries.count - 1,
+                    move: { offset in move(index, by: offset) },
+                    remove: { settings.launcherEntries.remove(at: index) },
+                )
+            }
+            HStack {
+                Button("Add App") {
+                    settings.launcherEntries.append(LauncherEntry(name: "", command: ""))
+                }
+                .disabled(settings.launcherEntries.count >= LaunchCatalog.maximumEntries)
+                Spacer()
+                Button("Reset to Defaults") {
+                    settings.launcherEntries = LaunchCatalog.defaults
+                }
+                .disabled(settings.launcherEntries.map(\.command) == LaunchCatalog.defaults.map(\.command)
+                    && settings.launcherEntries.map(\.name) == LaunchCatalog.defaults.map(\.name))
+            }
+        } header: {
+            Text("zsh app launcher")
+        } footer: {
+            Text("Offered after choosing zsh with Cmd+Shift+T (when the toggle above is on). The command is typed at the zsh prompt, so aliases and functions work; quitting the app leaves you in zsh. Up to \(LaunchCatalog.maximumEntries) apps, keys 1-\(LaunchCatalog.maximumEntries) in this order.")
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func move(_ index: Int, by offset: Int) {
+        let target = index + offset
+        guard settings.launcherEntries.indices.contains(target) else { return }
+        settings.launcherEntries.swapAt(index, target)
+    }
+}
+
+private struct LauncherRow: View {
+    let hotkey: String
+    @Binding var entry: LauncherEntry
+    let canMoveUp: Bool
+    let canMoveDown: Bool
+    let move: (Int) -> Void
+    let remove: () -> Void
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(hotkey)
+                .font(.system(.body, design: .monospaced))
+                .foregroundStyle(.tint)
+                .frame(width: 14)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    TextField("Name", text: $entry.name)
+                        .frame(width: 110)
+                    TextField("Command (typed at the prompt)", text: $entry.command)
+                        .font(.system(.body, design: .monospaced))
+                }
+                TextField("Description", text: $entry.summary)
+                    .foregroundStyle(.secondary)
+            }
+            .textFieldStyle(.roundedBorder)
+            .labelsHidden()
+            VStack(spacing: 2) {
+                Button { move(-1) } label: { Image(systemName: "chevron.up") }
+                    .disabled(!canMoveUp)
+                Button { move(1) } label: { Image(systemName: "chevron.down") }
+                    .disabled(!canMoveDown)
+            }
+            .buttonStyle(.borderless)
+            Button(role: .destructive, action: remove) { Image(systemName: "minus.circle") }
+                .buttonStyle(.borderless)
+                .help("Remove")
+        }
     }
 }

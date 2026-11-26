@@ -16,9 +16,11 @@ extension MenuItem {
                   detail: shell.executable ?? "not installed", isEnabled: shell.isInstalled)
     }
 
+    /// Launcher apps stay pickable when their program is not found: the
+    /// command may be an alias or a function (Settings > zsh app launcher).
     init(_ app: LaunchApp) {
-        self.init(hotkey: app.hotkey, name: app.name,
-                  detail: app.isInstalled ? app.summary : "not installed", isEnabled: app.isInstalled)
+        let detail = app.isFound ? app.summary : [app.summary, "(not found)"].filter { !$0.isEmpty }.joined(separator: " ")
+        self.init(hotkey: app.hotkey, name: app.name, detail: detail, isEnabled: true)
     }
 }
 
