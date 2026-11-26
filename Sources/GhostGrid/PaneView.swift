@@ -17,19 +17,21 @@ final class PaneTerminalView: AppTerminalView {
     }
 }
 
-/// One grid cell: a rounded container that first shows a shell menu, then
+/// One grid cell: a rounded container that first shows a menu, then
 /// a live Ghostty surface running the chosen shell, with a border that
 /// lights up while the pane has focus.
 @MainActor
 final class PaneView: NSView {
     /// The running terminal, once a shell has been picked.
     private(set) var terminal: PaneTerminalView?
-    private var picker: ShellPickerView?
+    private var choiceMenu: ChoiceMenuView?
     private let controllerFor: ControllerProvider
     private(set) var title = "New pane"
     private(set) var workingDirectory: String?
     /// The shell this pane runs, once picked.
     private(set) var shell: ShellChoice?
+    /// A command to type at the shell's first prompt (an app from the menu).
+    private var pendingCommand: String?
 
     var onFocus: ((PaneView) -> Void)?
     var onTitleChange: ((PaneView) -> Void)?
@@ -45,17 +47,19 @@ final class PaneView: NSView {
         }
     }
 
-    /// Whatever currently fills the pane: the menu, then the terminal.
-    private var content: NSView? { terminal ?? picker }
+    /// Whatever currently fills the pane: a menu, then the terminal.
+    private var content: NSView? { terminal ?? choiceMenu }
 
     /// Starts `shell` at once when given; otherwise shows the shell menu
-    /// with `preferred` highlighted.
+    /// with `preferred` highlighted. With `offerApps`, picking zsh shows a
+    /// second menu of command-line apps to launch in it (Escape: plain zsh).
     init(
         controllerFor: @escaping ControllerProvider,
         workingDirectory: String?,
         shells: [ShellChoice],
         shell: ShellChoice? = nil,
         preferred: ShellChoice? = nil,
+        offerApps: Bool = false,
     ) {
         self.controllerFor = controllerFor
         self.workingDirectory = workingDirectory
@@ -69,29 +73,75 @@ final class PaneView: NSView {
 
         if let shell {
             start(shell)
-            return
+        } else {
+            showShellMenu(shells, preferred: preferred, offerApps: offerApps)
         }
-        let picker = ShellPickerView(choices: shells, preferred: preferred)
-        picker.onFocus = { [weak self] in
+    }
+
+    // MARK: - Menus
+
+    private func showShellMenu(_ shells: [ShellChoice], preferred: ShellChoice?, offerApps: Bool) {
+        let menu = ChoiceMenuView(
+            title: "New pane: pick a shell",
+            hint: "1-\(shells.count) to choose   up/down + return   esc to cancel",
+            items: shells.map(MenuItem.init),
+            selected: preferred.flatMap { shells.firstIndex(of: $0) },
+        )
+        menu.onPick = { [weak self] index in
             guard let self else { return }
-            onFocus?(self)
+            let shell = shells[index]
+            onShellPicked?(shell)
+            if offerApps, shell.name == "zsh" {
+                showAppMenu(for: shell)
+            } else {
+                start(shell)
+            }
         }
-        picker.onPick = { [weak self] shell in
-            self?.onShellPicked?(shell)
-            self?.start(shell)
-        }
-        picker.onCancel = { [weak self] in
+        menu.onEscape = { [weak self] in
             guard let self else { return }
             onExit?(self)
         }
-        self.picker = picker
-        addSubview(picker)
+        show(menu)
     }
 
-    /// Replaces the menu with a terminal running `shell`.
-    private func start(_ shell: ShellChoice) {
+    private func showAppMenu(for shell: ShellChoice) {
+        let apps = LaunchCatalog.resolve(home: NSHomeDirectory()) {
+            FileManager.default.isExecutableFile(atPath: $0)
+        }
+        let menu = ChoiceMenuView(
+            title: "\(shell.name): launch an app",
+            hint: "1-\(apps.count) to launch   esc for a plain \(shell.name)",
+            items: apps.map(MenuItem.init),
+        )
+        menu.onPick = { [weak self] index in
+            self?.start(shell, then: apps[index].command)
+        }
+        menu.onEscape = { [weak self] in
+            self?.start(shell)
+        }
+        show(menu)
+    }
+
+    private func show(_ menu: ChoiceMenuView) {
+        menu.onFocus = { [weak self] in
+            guard let self else { return }
+            onFocus?(self)
+        }
+        choiceMenu?.removeFromSuperview()
+        choiceMenu = menu
+        menu.frame = bounds
+        addSubview(menu)
+        window?.makeFirstResponder(menu)
+    }
+
+    // MARK: - Terminal
+
+    /// Replaces the menu with a terminal running `shell`, and types
+    /// `command` at its first prompt when given.
+    private func start(_ shell: ShellChoice, then command: String? = nil) {
         guard terminal == nil, shell.isInstalled else { return }
         self.shell = shell
+        pendingCommand = command
         let terminal = PaneTerminalView(frame: bounds)
         terminal.delegate = self
         terminal.configuration = TerminalSurfaceOptions(
@@ -112,13 +162,36 @@ final class PaneView: NSView {
         }
         addSubview(terminal)
         self.terminal = terminal
-        picker?.removeFromSuperview()
-        picker = nil
+        choiceMenu?.removeFromSuperview()
+        choiceMenu = nil
         title = shell.name
         onTitleChange?(self)
         needsLayout = true
         layoutSubtreeIfNeeded()
         focus()
+        if command != nil {
+            // Normally sent when the shell reports its first prompt (OSC 7,
+            // see terminalDidChangeWorkingDirectory); this is the fallback.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                self?.sendPendingCommand()
+            }
+        }
+    }
+
+    /// Types the pending command as keystrokes and presses Enter.
+    /// Keystrokes rather than a paste: a paste that arrives before the line
+    /// editor is reading shows its bracketed-paste markers (^[[200~) as text.
+    private func sendPendingCommand() {
+        guard let command = pendingCommand, let terminal else { return }
+        let presses = command.compactMap { TerminalKeyPress(typing: $0) }
+        guard presses.count == command.count, let first = presses.first,
+              terminal.sendKey(first) // false: no surface yet; try again later
+        else { return }
+        pendingCommand = nil
+        for press in presses.dropFirst() {
+            terminal.sendKey(press)
+        }
+        terminal.sendKey(.enter)
     }
 
     @available(*, unavailable)
@@ -251,6 +324,13 @@ extension PaneView: TerminalSurfaceTitleDelegate, TerminalSurfacePwdDelegate, Te
 
     func terminalDidChangeWorkingDirectory(_ path: String) {
         workingDirectory = path
+        // The shell integration reports the directory just before each
+        // prompt; the line editor starts reading right after it.
+        if pendingCommand != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.sendPendingCommand()
+            }
+        }
     }
 
     func terminalDidClose(processAlive _: Bool) {

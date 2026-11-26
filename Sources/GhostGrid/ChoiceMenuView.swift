@@ -1,26 +1,50 @@
 import AppKit
 import GhostGridCore
 
-/// The menu a new pane shows before it starts a shell.
-/// Keys: the number picks that shell at once; Up/Down and Return pick the
-/// highlighted one; Escape cancels (the pane closes). Clicking a row works too.
+/// One line of a pane menu.
+struct MenuItem {
+    let hotkey: String
+    let name: String
+    /// Shown dimmed after the name (a path, a description).
+    let detail: String
+    let isEnabled: Bool
+}
+
+extension MenuItem {
+    init(_ shell: ShellChoice) {
+        self.init(hotkey: shell.hotkey, name: shell.name,
+                  detail: shell.executable ?? "not installed", isEnabled: shell.isInstalled)
+    }
+
+    init(_ app: LaunchApp) {
+        self.init(hotkey: app.hotkey, name: app.name,
+                  detail: app.isInstalled ? app.summary : "not installed", isEnabled: app.isInstalled)
+    }
+}
+
+/// The menu card a pane shows before it starts: the shell menu, then for
+/// zsh (on Cmd+Shift+T) the app menu.
+/// Keys: a number picks that item at once; Up/Down and Return pick the
+/// highlighted one; Escape calls onEscape. Clicking a row works too.
 @MainActor
-final class ShellPickerView: NSView {
-    var onPick: ((ShellChoice) -> Void)?
-    var onCancel: (() -> Void)?
+final class ChoiceMenuView: NSView {
+    var onPick: ((Int) -> Void)?
+    var onEscape: (() -> Void)?
     var onFocus: (() -> Void)?
 
-    private let choices: [ShellChoice]
+    private let items: [MenuItem]
+    private let title: String
+    private let hint: String
     private var selected: Int
     private var rows: [RowView] = []
     private let card = NSView()
 
-    /// `preferred` (the remembered shell) starts highlighted, so Return
-    /// picks it again.
-    init(choices: [ShellChoice], preferred: ShellChoice? = nil) {
-        self.choices = choices
-        selected = preferred.flatMap { choices.firstIndex(of: $0) }
-            ?? choices.firstIndex(where: \.isInstalled) ?? 0
+    init(title: String, hint: String, items: [MenuItem], selected: Int? = nil) {
+        self.title = title
+        self.hint = hint
+        self.items = items
+        self.selected = selected.flatMap { items.indices.contains($0) && items[$0].isEnabled ? $0 : nil }
+            ?? items.firstIndex(where: \.isEnabled) ?? 0
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = Palette.paneBackground.cgColor
@@ -46,7 +70,7 @@ final class ShellPickerView: NSView {
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
         case 53: // escape
-            onCancel?()
+            onEscape?()
         case 36, 76: // return, keypad enter
             pick(selected)
         case 126: // up
@@ -55,9 +79,7 @@ final class ShellPickerView: NSView {
             move(1)
         default:
             let key = event.charactersIgnoringModifiers ?? ""
-            if let choice = ShellCatalog.choice(forKey: key, in: choices),
-               let index = choices.firstIndex(of: choice)
-            {
+            if let index = items.firstIndex(where: { $0.hotkey == key && $0.isEnabled }) {
                 pick(index)
             } else {
                 NSSound.beep()
@@ -74,20 +96,20 @@ final class ShellPickerView: NSView {
     }
 
     private func move(_ step: Int) {
-        let installed = choices.indices.filter { choices[$0].isInstalled }
-        guard let position = installed.firstIndex(of: selected), !installed.isEmpty else { return }
-        selected = installed[(position + step + installed.count) % installed.count]
+        let enabled = items.indices.filter { items[$0].isEnabled }
+        guard let position = enabled.firstIndex(of: selected), !enabled.isEmpty else { return }
+        selected = enabled[(position + step + enabled.count) % enabled.count]
         render()
     }
 
     private func pick(_ index: Int) {
-        guard choices.indices.contains(index), choices[index].isInstalled else {
+        guard items.indices.contains(index), items[index].isEnabled else {
             NSSound.beep()
             return
         }
         selected = index
         render()
-        onPick?(choices[index])
+        onPick?(index)
     }
 
     // MARK: - Drawing
@@ -102,16 +124,15 @@ final class ShellPickerView: NSView {
         card.translatesAutoresizingMaskIntoConstraints = false
         addSubview(card)
 
-        let title = label("New pane: pick a shell", size: 13, color: Palette.subtext)
-        let hint = label("1-\(choices.count) to choose   up/down + return   esc to cancel",
-                         size: 11, color: Palette.overlay)
-        rows = choices.map { RowView(choice: $0, font: Palette.mono(14)) }
+        let titleLabel = label(title, size: 13, color: Palette.subtext)
+        let hintLabel = label(hint, size: 11, color: Palette.overlay)
+        rows = items.map { RowView(item: $0, font: Palette.mono(14)) }
 
-        let stack = NSStackView(views: [title] + rows + [hint])
+        let stack = NSStackView(views: [titleLabel] + rows + [hintLabel])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 6
-        stack.setCustomSpacing(12, after: title)
+        stack.setCustomSpacing(12, after: titleLabel)
         if let last = rows.last { stack.setCustomSpacing(12, after: last) }
         stack.edgeInsets = NSEdgeInsets(top: 16, left: 16, bottom: 14, right: 16)
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -142,18 +163,18 @@ final class ShellPickerView: NSView {
     }
 }
 
-/// One line of the menu: hotkey, name, and the path (or "not installed").
+/// One line of the menu: hotkey, name, and detail.
 @MainActor
 private final class RowView: NSView {
-    private let choice: ShellChoice
+    private let item: MenuItem
     private let text = NSTextField(labelWithString: "")
 
     var isSelected = false {
         didSet { update() }
     }
 
-    init(choice: ShellChoice, font: NSFont) {
-        self.choice = choice
+    init(item: MenuItem, font: NSFont) {
+        self.item = item
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 6
@@ -175,15 +196,15 @@ private final class RowView: NSView {
     }
 
     private func update() {
-        let installed = choice.isInstalled
+        let enabled = item.isEnabled
         let string = NSMutableAttributedString()
         func add(_ part: String, _ color: NSColor) {
             string.append(NSAttributedString(string: part, attributes: [.foregroundColor: color, .font: text.font!]))
         }
-        add(" \(choice.hotkey) ", installed ? Palette.focus : Palette.overlay)
-        add(" \(choice.name.padding(toLength: 9, withPad: " ", startingAt: 0))", installed ? Palette.text : Palette.overlay)
-        add(" \(choice.executable ?? "not installed")", installed ? Palette.subtext : Palette.overlay)
+        add(" \(item.hotkey) ", enabled ? Palette.focus : Palette.overlay)
+        add(" \(item.name.padding(toLength: 9, withPad: " ", startingAt: 0))", enabled ? Palette.text : Palette.overlay)
+        add(" \(item.detail)", enabled ? Palette.subtext : Palette.overlay)
         text.attributedStringValue = string
-        layer?.backgroundColor = (isSelected && installed ? Palette.focus.withAlphaComponent(0.18) : .clear).cgColor
+        layer?.backgroundColor = (isSelected && enabled ? Palette.focus.withAlphaComponent(0.18) : .clear).cgColor
     }
 }

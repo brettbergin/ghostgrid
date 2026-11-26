@@ -69,6 +69,7 @@ final class GridView: NSView {
             shells: shells,
             shell: chooseShell ? nil : remembered,
             preferred: remembered,
+            offerApps: chooseShell,
         )
         pane.onShellPicked = { ShellMemory.last = $0.name }
         pane.onFocus = { [weak self] in self?.paneDidFocus($0) }

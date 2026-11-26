@@ -32,6 +32,16 @@ dimmed and skipped (nushell is looked for in `/opt/homebrew/bin/nu`,
 `/usr/local/bin/nu` and `~/.cargo/bin/nu`; a Homebrew bash wins over the
 system bash 3.2). Shells start as login shells, so `~/.zprofile` loads.
 
+### Apps in a new zsh pane
+
+Picking **zsh** from the Cmd+Shift+T menu opens a second menu of apps to
+start in it: **1** opencode, **2** claude, **3** btop, **4** lazygit,
+**5** yazi (as `y`, so quitting with q leaves the pane in that folder).
+Press the number to launch; **Escape** drops you into a plain zsh. The
+app's command is typed at zsh's first prompt, so it lands in history and
+quitting the app leaves you at the zsh prompt in the same pane. Apps that
+are not installed are dimmed. Cmd+T never shows this menu.
+
 This libghostty build ignores a per-pane command, so each shell gets its
 own Ghostty app instance whose config ends with `command = <shell> -l`
 (`~/Library/Application Support/ghostgrid/config-<shell>.ghostty`), created
