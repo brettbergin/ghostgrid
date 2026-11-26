@@ -93,6 +93,7 @@ zsh and bash integration only, so other shells (nushell) run with
 | Cmd+Option+I          | Broadcast typing to every pane on/off    |
 | Cmd+Shift+B           | Command blocks of the focused pane       |
 | Cmd+Option+Shift+C    | Copy the last command's output           |
+| Cmd+Shift+E           | Explain the last failure (Return runs the fix) |
 | Cmd+N                 | New window                               |
 | Cmd+,                 | ghostgrid Settings                       |
 
@@ -118,6 +119,26 @@ live in `~/Library/Application Support/ghostgrid/hooks` and are rewritten
 on each launch. nushell's own marks give blocks without the command line.
 The last 200 commands per pane are kept, with up to 256 KiB of output
 each (the end of longer output), and they come back with kept shells.
+
+## Explain failures (local model)
+
+When a command fails in the pane you are working in, ghostgrid sends its
+command line and the end of its output (6 KB at most) to a local model and
+shows a panel at the bottom of the pane: why it failed, and one command to
+fix it. The answer streams in as the model writes it.
+
+- The panel does not take the keyboard: keep typing and it goes to the
+  shell, so a reflexive Return never runs a suggested command.
+- Pane > Explain Last Failure (Cmd+Shift+E) focuses the panel (or explains
+  the last failure on demand). Then Return types the fix and runs it,
+  Escape dismisses, and any other key dismisses and goes to the shell.
+- The panel goes away when the next command starts.
+- Interrupted commands (Ctrl+C, Ctrl+Z, kill) are not explained.
+- Settings > Explain failures: turn the automatic panel off, or set the
+  model server and model. The default is LM Studio's local server
+  (`http://localhost:1234/v1`) and its first loaded chat model; any
+  OpenAI-style server works. Output leaves the Mac only if you point it at
+  another machine.
 
 ## Broadcast typing
 
@@ -158,7 +179,7 @@ Ghostty's, nushell natively).
 ## Shells that survive quitting
 
 Every pane's shell runs in a small background helper,
-`ghostgrid-sessiond` (bundled in `Contents/MacOS`), not under the app.
+`ghostgrid-sessiond` (bundled in `Contents/Helpers`), not under the app.
 Quit ghostgrid and the shells keep going: running programs, builds, an
 agent mid-task. Relaunch and each pane reattaches to its shell and gets
 its recent output back (up to 4 MiB per pane), so the screen looks as you
@@ -170,10 +191,11 @@ redraw on reattach.
   quitting then ends every shell, as before.
 - If a kept shell is gone on relaunch (it exited, or the Mac restarted),
   the pane starts a fresh shell in the same folder.
-- The helper starts on demand as its own launchd job
-  (`com.brettbergin.ghostgrid.sessiond.v1`, in memory only, so nothing is
-  installed and a restart clears it): macOS ends every process an app
-  started when the app quits. It listens on a user-only socket in
+- The helper is a background-only app inside ghostgrid
+  (`Contents/Helpers/ghostgrid-sessiond.app`, no Dock icon), started on
+  demand through LaunchServices: macOS ends everything an app started when
+  the app quits, so the helper has to be an app of its own. It listens on
+  a user-only socket in
   `~/Library/Application Support/ghostgrid/` (one per protocol version, so
   an update never talks to an older helper), logs to
   `~/Library/Logs/ghostgrid/sessiond.log`, and exits on its own 30 s after

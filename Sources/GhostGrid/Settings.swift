@@ -64,6 +64,21 @@ final class GhostGridSettings: ObservableObject {
         didSet { save(keepShellsRunning, "keepShellsRunning") }
     }
 
+    /// Explain a failed command in the focused pane as soon as it fails.
+    @Published var explainFailures: Bool {
+        didSet { save(explainFailures, "explainFailures") }
+    }
+
+    /// The local model server (OpenAI-style API; LM Studio's by default).
+    @Published var modelEndpoint: String {
+        didSet { save(modelEndpoint, "modelEndpoint") }
+    }
+
+    /// The model to ask; empty: the first chat model the server has.
+    @Published var modelName: String {
+        didSet { save(modelName, "modelName") }
+    }
+
     private init() {
         newPaneUsesLastShell = defaults.object(forKey: "newPaneUsesLastShell") as? Bool ?? true
         offerAppsAfterZsh = defaults.object(forKey: "offerAppsAfterZsh") as? Bool ?? true
@@ -75,6 +90,9 @@ final class GhostGridSettings: ObservableObject {
         launcherEntries = LaunchCatalog.decode(defaults.data(forKey: "launcherEntries"))
         showActivityBadges = defaults.object(forKey: "showActivityBadges") as? Bool ?? true
         keepShellsRunning = defaults.object(forKey: "keepShellsRunning") as? Bool ?? true
+        explainFailures = defaults.object(forKey: "explainFailures") as? Bool ?? true
+        modelEndpoint = defaults.string(forKey: "modelEndpoint") ?? "http://localhost:1234/v1"
+        modelName = defaults.string(forKey: "modelName") ?? ""
     }
 
     private func save(_ value: Any?, _ key: String) {
@@ -134,6 +152,17 @@ struct SettingsView: View {
             }
 
             LauncherSettingsSection(settings: settings)
+
+            Section {
+                Toggle("Explain a failed command right away", isOn: $settings.explainFailures)
+                TextField("Model server", text: $settings.modelEndpoint, prompt: Text("http://localhost:1234/v1"))
+                TextField("Model", text: $settings.modelName, prompt: Text("first loaded model"))
+            } header: {
+                Text("Explain failures")
+            } footer: {
+                Text("When a command fails in the pane you are working in, its command line and the end of its output go to this model server, and a panel says why it failed and suggests a fix. Pane > Explain Last Failure (Cmd+Shift+E) does it on demand and focuses the panel: Return runs the fix, Escape dismisses. The default is LM Studio's local server; output only leaves this Mac if you point it at another machine.")
+                    .foregroundStyle(.secondary)
+            }
 
             Section {
                 Toggle("Keep shells running after quitting", isOn: $settings.keepShellsRunning)

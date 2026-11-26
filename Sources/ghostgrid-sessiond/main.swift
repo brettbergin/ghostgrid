@@ -4,7 +4,7 @@
 // per pane (see SessionProtocol in GhostGridCore). It exits on its own once
 // it has no shells and no connections for a while.
 //
-// Usage: ghostgrid-sessiond --socket <path>
+// Usage: ghostgrid-sessiond --socket <path> [--log <path>]
 import Darwin
 import Foundation
 import GhostGridCore
@@ -23,6 +23,11 @@ guard let socketIndex = arguments.firstIndex(of: "--socket"), arguments.indices.
     exit(64)
 }
 let socketPath = arguments[socketIndex + 1]
+// Started as an app by LaunchServices, stderr goes nowhere: log here.
+if let logIndex = arguments.firstIndex(of: "--log"), arguments.indices.contains(logIndex + 1) {
+    _ = freopen(arguments[logIndex + 1], "a", stderr)
+    setvbuf(stderr, nil, _IOLBF, 0)
+}
 
 /// Writes all of `data` to `fd`, retrying partial writes; false on error.
 @discardableResult
