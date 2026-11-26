@@ -65,6 +65,26 @@ zsh and bash integration only, so other shells (nushell) run with
 These win over Ghostty keybindings with the same keys; every other key
 goes to the terminal (so Ghostty's own bindings still work).
 
+## Pane headers and activity badges
+
+Each pane has a slim header: its shell, its folder (`~`-shortened, trimmed
+from the left when long) and the git branch, read from `.git/HEAD` without
+running git (worktrees and submodules included). It updates on `cd`, after
+each command, and on focus.
+
+Panes you are not looking at get a badge when something happens there:
+
+- **bell** (peach): a program rang the bell.
+- **✓ 12s** (green): a command that ran 5 s or more finished.
+- **✕ exit 2** (red): such a command failed, with its exit code.
+
+Focusing the pane (or coming back to the window) clears it. "Not looking"
+means not the focused pane of the key window of the active app, so a long
+build finishing while you are in another app badges too. Both are
+optional in Settings; with headers off, badges sit in the pane's corner.
+Finished-command badges need shell integration (zsh and bash via
+Ghostty's, nushell natively).
+
 ## Session restore
 
 Quit and relaunch, and ghostgrid reopens your windows where they were,
@@ -84,6 +104,7 @@ the app's defaults (`com.brettbergin.ghostgrid`) and applied immediately:
 
 - **Cmd+T opens**: your last shell, or the shell menu every time.
 - **Last shell**: shown, with Forget.
+- **Pane headers** and **activity badges**: on/off.
 - **Offer apps after choosing zsh** (the app menu).
 - **Gap between panes**: 0-24 pt.
 - **Animations**: Springy (default), Smooth (no overshoot), or Off.

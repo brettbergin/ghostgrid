@@ -36,12 +36,25 @@ final class GhostGridSettings: ObservableObject {
         didSet { save(animation.rawValue, "animationStyle") }
     }
 
+    /// A header on each pane: shell, folder, git branch.
+    @Published var showPaneHeaders: Bool {
+        didSet { save(showPaneHeaders, "showPaneHeaders") }
+    }
+
+    /// Badges for a bell or a long command finishing in a pane you were
+    /// not looking at.
+    @Published var showActivityBadges: Bool {
+        didSet { save(showActivityBadges, "showActivityBadges") }
+    }
+
     private init() {
         newPaneUsesLastShell = defaults.object(forKey: "newPaneUsesLastShell") as? Bool ?? true
         offerAppsAfterZsh = defaults.object(forKey: "offerAppsAfterZsh") as? Bool ?? true
         lastShell = defaults.string(forKey: "lastShell")
         gap = PaneGap.clamped(defaults.object(forKey: "paneGap") as? Double)
         animation = AnimationStyle(stored: defaults.string(forKey: "animationStyle"))
+        showPaneHeaders = defaults.object(forKey: "showPaneHeaders") as? Bool ?? true
+        showActivityBadges = defaults.object(forKey: "showActivityBadges") as? Bool ?? true
     }
 
     private func save(_ value: Any?, _ key: String) {
@@ -97,6 +110,16 @@ struct SettingsView: View {
                     }
                 }
                 Toggle("Offer apps after choosing zsh (Cmd+Shift+T)", isOn: $settings.offerAppsAfterZsh)
+            }
+
+            Section {
+                Toggle("Show pane headers (shell, folder, git branch)", isOn: $settings.showPaneHeaders)
+                Toggle("Activity badges", isOn: $settings.showActivityBadges)
+            } header: {
+                Text("Panes")
+            } footer: {
+                Text("Badges mark panes you are not looking at: a bell, or a command that ran \(Int(PaneActivity.minimumSeconds))s or more (green when it succeeded, red with the exit code when it failed). Focusing the pane clears it.")
+                    .foregroundStyle(.secondary)
             }
 
             Section("Grid") {

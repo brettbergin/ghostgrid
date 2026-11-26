@@ -51,6 +51,16 @@ final class PaneView: NSView {
     private let dimView = PassthroughView()
     /// Shown while a search runs (Cmd+F, Ghostty's start_search).
     private var searchBar: SearchBarView?
+    /// Shell, folder and branch on top (Settings > Panes > headers).
+    private var header: PaneHeaderView?
+    /// The activity badge when headers are off: a pill in the corner.
+    private var cornerBadge: ActivityBadgeView?
+    private var branch: String?
+    /// Something that happened while you were not looking at this pane.
+    private var activity: PaneActivity? {
+        didSet { (header?.badge ?? cornerBadge)?.activity = activity }
+    }
+    private var settings: GhostGridSettings { .shared }
 
     var onFocus: ((PaneView) -> Void)?
     var onTitleChange: ((PaneView) -> Void)?
@@ -66,6 +76,8 @@ final class PaneView: NSView {
             animateBorder(to: isFocusedPane ? Palette.focus : Palette.idle,
                           width: isFocusedPane ? 2 : 1)
             updateDim(animated: true)
+            header?.isFocused = isFocusedPane
+            if isFocusedPane { activity = nil }
         }
     }
 
@@ -100,6 +112,10 @@ final class PaneView: NSView {
         NotificationCenter.default.addObserver(
             self, selector: #selector(optionsChanged), name: GhosttyOptions.didChange, object: nil,
         )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(settingsChanged), name: GhostGridSettings.didChange, object: nil,
+        )
+        applyChromeSettings()
 
         if let shell {
             start(shell)
@@ -196,6 +212,7 @@ final class PaneView: NSView {
         choiceMenu = nil
         title = shell.name
         onTitleChange?(self)
+        refreshBranch()
         needsLayout = true
         layoutSubtreeIfNeeded()
         focus()
@@ -234,11 +251,12 @@ final class PaneView: NSView {
     override func layout() {
         super.layout()
         dimView.frame = bounds
+        layoutChrome(for: bounds.size)
         layoutSearchBar()
         // While a resize animates, the terminal already has its final size
         // and a transform scales it to the box; resizing it here would undo that.
         guard contentAnimation == 0 else { return }
-        content?.frame = bounds
+        content?.frame = contentRect(for: bounds.size)
         terminal?.fitToSize()
     }
 
@@ -256,7 +274,8 @@ final class PaneView: NSView {
     /// instead of snapping, and is crisp when the animation lands.
     func animateContent(from old: CGSize, to new: CGSize, duration: TimeInterval, curve: CubicBezier) {
         guard old.width > 0, old.height > 0, new.width > 0, new.height > 0, old != new, let layer else { return }
-        content?.frame = CGRect(origin: .zero, size: new)
+        content?.frame = contentRect(for: new)
+        layoutChrome(for: new)
         terminal?.fitToSize()
         // Sampled along the same curve as the frame, so the content covers
         // the box exactly at every moment, overshoot included.
@@ -314,6 +333,101 @@ final class PaneView: NSView {
 
     func focus() {
         window?.makeFirstResponder(searchBar?.field ?? content)
+    }
+
+    // MARK: - Header and activity badges
+
+    private var headerHeight: CGFloat { header == nil ? 0 : PaneHeaderView.height }
+
+    /// The terminal (or menu) area: everything below the header.
+    private func contentRect(for size: CGSize) -> CGRect {
+        CGRect(x: 0, y: headerHeight, width: size.width, height: max(size.height - headerHeight, 0))
+    }
+
+    private func layoutChrome(for size: CGSize) {
+        header?.frame = CGRect(x: 0, y: 0, width: size.width, height: PaneHeaderView.height)
+        if let cornerBadge {
+            let fit = cornerBadge.fittingSize
+            cornerBadge.frame = CGRect(x: size.width - fit.width - 8, y: 8, width: fit.width, height: fit.height)
+        }
+    }
+
+    @objc private func settingsChanged() {
+        applyChromeSettings()
+    }
+
+    /// Adds or removes the header and corner badge to match Settings.
+    private func applyChromeSettings() {
+        let wantsHeader = settings.showPaneHeaders
+        if wantsHeader, header == nil {
+            let view = PaneHeaderView()
+            view.isFocused = isFocusedPane
+            addSubview(view) // above the terminal and the dim layer
+            header = view
+        } else if !wantsHeader, let view = header {
+            view.removeFromSuperview()
+            header = nil
+        }
+        if wantsHeader, let badge = cornerBadge {
+            badge.removeFromSuperview()
+            cornerBadge = nil
+        } else if !wantsHeader, cornerBadge == nil {
+            let badge = ActivityBadgeView()
+            addSubview(badge)
+            cornerBadge = badge
+        }
+        if !settings.showActivityBadges { activity = nil }
+        (header?.badge ?? cornerBadge)?.activity = activity
+        updateHeader()
+        needsLayout = true
+    }
+
+    private func updateHeader() {
+        header?.update(shell: shell?.name, directory: workingDirectory, branch: branch)
+    }
+
+    /// Re-reads the branch (after a cd, a command, or focusing the pane:
+    /// `git switch` changes it without changing the folder).
+    private func refreshBranch() {
+        let fm = FileManager.default
+        branch = workingDirectory.flatMap { directory in
+            GitBranch.read(
+                from: directory,
+                fileExists: { fm.fileExists(atPath: $0) },
+                isDirectory: { path in
+                    var isDirectory: ObjCBool = false
+                    return fm.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue
+                },
+                readFile: { try? String(contentsOfFile: $0, encoding: .utf8) },
+            )
+        }
+        updateHeader()
+    }
+
+    /// Whether you are looking at this pane: focused in its grid, in the
+    /// key window of the active app.
+    private var isWatched: Bool {
+        isFocusedPane && window?.isKeyWindow == true && NSApp.isActive
+    }
+
+    private func note(_ new: PaneActivity) {
+        guard settings.showActivityBadges, !isWatched else { return }
+        activity = new
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        NotificationCenter.default.removeObserver(self, name: NSWindow.didBecomeKeyNotification, object: nil)
+        if let window {
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(windowBecameKey), name: NSWindow.didBecomeKeyNotification, object: window,
+            )
+        }
+    }
+
+    /// Coming back to the window clears the focused pane's badge.
+    @objc private func windowBecameKey() {
+        if isFocusedPane { activity = nil }
     }
 
     // MARK: - Unfocused dimming
@@ -394,7 +508,7 @@ final class PaneView: NSView {
         guard let bar = searchBar else { return }
         let size = bar.fittingSize
         let width = min(max(size.width, 260), bounds.width - 16)
-        bar.frame = CGRect(x: bounds.maxX - width - 8, y: 8, width: width, height: size.height)
+        bar.frame = CGRect(x: bounds.maxX - width - 8, y: headerHeight + 8, width: width, height: size.height)
     }
 
     /// A bright border that cools to the focus blue as the pane lands.
@@ -431,7 +545,8 @@ final class PaneView: NSView {
 
 extension PaneView: TerminalSurfaceTitleDelegate, TerminalSurfacePwdDelegate, TerminalSurfaceCloseDelegate,
     TerminalSurfaceOpenURLHandlingDelegate, TerminalSurfaceBellDelegate,
-    TerminalSurfaceDesktopNotificationDelegate, TerminalSurfaceSearchDelegate
+    TerminalSurfaceDesktopNotificationDelegate, TerminalSurfaceSearchDelegate,
+    TerminalSurfaceCommandFinishedDelegate
 {
     /// Cmd-click on a link. The package refuses every link on macOS unless
     /// the host opens it; LinkPolicy vets what the terminal handed over.
@@ -449,6 +564,16 @@ extension PaneView: TerminalSurfaceTitleDelegate, TerminalSurfacePwdDelegate, Te
 
     func terminalDidRingBell() {
         ringBell()
+        note(.bell)
+    }
+
+    func terminalDidFinishCommand(exitCode: Int?, durationNanos: UInt64) {
+        refreshBranch()
+        if let finished = PaneActivity.forFinishedCommand(
+            exitCode: exitCode, durationNanos: durationNanos, paneFocused: isWatched,
+        ) {
+            note(finished)
+        }
     }
 
     func terminalDidRequestDesktopNotification(title: String, body: String) {
@@ -479,7 +604,10 @@ extension PaneView: TerminalSurfaceTitleDelegate, TerminalSurfacePwdDelegate, Te
     func terminalDidChangeWorkingDirectory(_ path: String) {
         let changed = workingDirectory != path
         workingDirectory = path
-        if changed { onWorkingDirectoryChange?(self) }
+        if changed {
+            onWorkingDirectoryChange?(self)
+            refreshBranch()
+        }
         // The shell integration reports the directory just before each
         // prompt; the line editor starts reading right after it.
         if pendingCommand != nil {
@@ -497,6 +625,8 @@ extension PaneView: TerminalSurfaceTitleDelegate, TerminalSurfacePwdDelegate, Te
 /// Catppuccin Mocha accents, matching the dotfiles rice.
 enum Palette {
     static let focus = NSColor(srgbRed: 0x89 / 255, green: 0xB4 / 255, blue: 0xFA / 255, alpha: 1)  // blue
+    static let success = NSColor(srgbRed: 0xA6 / 255, green: 0xE3 / 255, blue: 0xA1 / 255, alpha: 1) // green
+    static let failure = NSColor(srgbRed: 0xF3 / 255, green: 0x8B / 255, blue: 0xA8 / 255, alpha: 1) // red
     static let bell = NSColor(srgbRed: 0xFA / 255, green: 0xB3 / 255, blue: 0x87 / 255, alpha: 1)   // peach
     static let flash = NSColor(srgbRed: 0xB4 / 255, green: 0xBE / 255, blue: 0xFE / 255, alpha: 1) // lavender
     static let text = NSColor(srgbRed: 0xCD / 255, green: 0xD6 / 255, blue: 0xF4 / 255, alpha: 1)
