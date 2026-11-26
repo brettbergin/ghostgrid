@@ -18,6 +18,22 @@ make test    # unit tests (grid layout, config flattening)
 make check   # tests + release app + shellcheck
 ```
 
+## Picking a shell
+
+Every new pane opens with a menu: **1** zsh, **2** nushell, **3** bash.
+Press the number to start that shell at once, or use Up/Down and Return;
+Escape cancels and closes the pane. A shell that is not installed is shown
+dimmed and skipped (nushell is looked for in `/opt/homebrew/bin/nu`,
+`/usr/local/bin/nu` and `~/.cargo/bin/nu`; a Homebrew bash wins over the
+system bash 3.2). Shells start as login shells, so `~/.zprofile` loads.
+
+This libghostty build ignores a per-pane command, so each shell gets its
+own Ghostty app instance whose config ends with `command = <shell> -l`
+(`~/Library/Application Support/ghostgrid/config-<shell>.ghostty`), created
+the first time a pane picks that shell. The package bundles Ghostty's
+zsh and bash integration only, so other shells (nushell) run with
+`shell-integration = none`; nushell emits its own prompt markers.
+
 ## Keys
 
 | Keys                  | Action                                   |
@@ -49,7 +65,8 @@ curve as the frame, keeps it covering the moving box without stretching.
 
 - `Sources/GhostGrid`: the AppKit app (window, grid view, panes, menu).
 - `Sources/GhostGridCore`: AppKit-free logic with unit tests:
-  `GridLayout` (frames, directional neighbours) and `ConfigFlattener`.
+  `GridLayout` (frames, directional neighbours), `ConfigFlattener`,
+  `ShellCatalog`/`ShellConfig` and `ContentScale` (animation curve math).
 - [libghostty-spm](https://github.com/Lakr233/libghostty-spm) (MIT),
   pinned exactly in `Package.swift`: prebuilt `GhosttyKit.xcframework`
   plus AppKit terminal views. libghostty's embedding API is not stable, so
@@ -62,7 +79,6 @@ curve as the frame, keeps it covering the moving box without stretching.
 
 The package loads a single config file and does not follow `config-file`
 includes. ghostgrid therefore flattens your config (includes inlined in
-Ghostty's order, relative shader paths made absolute) into
-`~/Library/Application Support/ghostgrid/config.ghostty` at launch and
-loads that. Edit your Ghostty config, not the generated file.
+Ghostty's order, relative shader paths made absolute) at launch, and each
+shell's generated config above is that plus its `command`. Edit your Ghostty config, not the generated file.
 `GHOSTGRID_CONFIG=/path/to/config` uses a different entry file.

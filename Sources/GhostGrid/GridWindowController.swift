@@ -17,8 +17,8 @@ final class GridWindowController: NSWindowController, NSWindowDelegate {
     let grid: GridView
     var onClose: ((GridWindowController) -> Void)?
 
-    init(controller: TerminalController) {
-        grid = GridView(controller: controller)
+    init(controllerFor: @escaping ControllerProvider) {
+        grid = GridView(controllerFor: controllerFor)
         let window = GridWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1280, height: 800),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],

@@ -5,7 +5,7 @@ import GhosttyTerminal
 /// Holds every pane in a window and keeps them in a balanced, animated grid.
 @MainActor
 final class GridView: NSView {
-    private let controller: TerminalController
+    private let controllerFor: ControllerProvider
     private(set) var panes: [PaneView] = []
     private(set) weak var focused: PaneView?
     private var zoomed: PaneView?
@@ -28,11 +28,17 @@ final class GridView: NSView {
         .environment["GHOSTGRID_SLOW_ANIMATIONS"].flatMap(TimeInterval.init).map { max($0, 1) } ?? 1
     private let ease = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.25, 1)
 
+    /// Looked up once per new pane, so a shell installed while the app
+    /// runs shows up in the next menu.
+    private var shells: [ShellChoice] {
+        ShellCatalog.resolve(home: NSHomeDirectory()) { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
     var onEmpty: (() -> Void)?
     var onTitleChange: ((String) -> Void)?
 
-    init(controller: TerminalController) {
-        self.controller = controller
+    init(controllerFor: @escaping ControllerProvider) {
+        self.controllerFor = controllerFor
         super.init(frame: .zero)
     }
 
@@ -52,7 +58,7 @@ final class GridView: NSView {
     // MARK: - Panes
 
     func addPane() {
-        let pane = PaneView(controller: controller, workingDirectory: focused?.workingDirectory)
+        let pane = PaneView(controllerFor: controllerFor, workingDirectory: focused?.workingDirectory, shells: shells)
         pane.onFocus = { [weak self] in self?.paneDidFocus($0) }
         pane.onTitleChange = { [weak self] pane in
             guard let self, pane === focused else { return }
@@ -168,7 +174,7 @@ final class GridView: NSView {
         // The zoomed pane draws above its neighbours while it grows.
         if let zoomed { addSubview(zoomed, positioned: .above, relativeTo: nil) }
         for pane in panes {
-            pane.terminal.setSurfaceVisible(zoomed == nil || pane === zoomed)
+            pane.terminal?.setSurfaceVisible(zoomed == nil || pane === zoomed)
         }
 
         guard animated else {

@@ -2,6 +2,9 @@ import AppKit
 import GhostGridCore
 import GhosttyTerminal
 
+/// The Ghostty app instance whose config runs a given shell.
+typealias ControllerProvider = @MainActor (ShellChoice) -> TerminalController
+
 /// A Ghostty terminal view that reports when it takes keyboard focus.
 @MainActor
 final class PaneTerminalView: AppTerminalView {
@@ -14,13 +17,19 @@ final class PaneTerminalView: AppTerminalView {
     }
 }
 
-/// One grid cell: a rounded container around a live Ghostty surface, with a
-/// border that lights up while the pane has focus.
+/// One grid cell: a rounded container that first shows a shell menu, then
+/// a live Ghostty surface running the chosen shell, with a border that
+/// lights up while the pane has focus.
 @MainActor
 final class PaneView: NSView {
-    let terminal = PaneTerminalView(frame: .zero)
-    private(set) var title = ""
+    /// The running terminal, once a shell has been picked.
+    private(set) var terminal: PaneTerminalView?
+    private var picker: ShellPickerView?
+    private let controllerFor: ControllerProvider
+    private(set) var title = "New pane"
     private(set) var workingDirectory: String?
+    /// The shell this pane runs, once picked.
+    private(set) var shell: ShellChoice?
 
     var onFocus: ((PaneView) -> Void)?
     var onTitleChange: ((PaneView) -> Void)?
@@ -34,7 +43,11 @@ final class PaneView: NSView {
         }
     }
 
-    init(controller: TerminalController, workingDirectory: String?) {
+    /// Whatever currently fills the pane: the menu, then the terminal.
+    private var content: NSView? { terminal ?? picker }
+
+    init(controllerFor: @escaping ControllerProvider, workingDirectory: String?, shells: [ShellChoice]) {
+        self.controllerFor = controllerFor
         self.workingDirectory = workingDirectory
         super.init(frame: .zero)
         wantsLayer = true
@@ -44,18 +57,51 @@ final class PaneView: NSView {
         layer?.borderWidth = 1
         layer?.borderColor = Palette.idle.cgColor
 
+        let picker = ShellPickerView(choices: shells)
+        picker.onFocus = { [weak self] in
+            guard let self else { return }
+            onFocus?(self)
+        }
+        picker.onPick = { [weak self] in self?.start($0) }
+        picker.onCancel = { [weak self] in
+            guard let self else { return }
+            onExit?(self)
+        }
+        self.picker = picker
+        addSubview(picker)
+    }
+
+    /// Replaces the menu with a terminal running `shell`.
+    private func start(_ shell: ShellChoice) {
+        guard terminal == nil, shell.isInstalled else { return }
+        self.shell = shell
+        let terminal = PaneTerminalView(frame: bounds)
         terminal.delegate = self
         terminal.configuration = TerminalSurfaceOptions(
             backend: .exec,
             workingDirectory: workingDirectory,
-            envVars: ["GHOSTGRID": "1"],
+            envVars: [
+                "GHOSTGRID": "1",
+                "GHOSTGRID_SHELL": shell.name,
+                // macOS bash 3.2 otherwise prints a "default shell is now zsh" notice.
+                "BASH_SILENCE_DEPRECATION_WARNING": "1",
+            ],
         )
-        terminal.controller = controller
+        // The shell comes from the controller's config; see ShellConfig.
+        terminal.controller = controllerFor(shell)
         terminal.onFocus = { [weak self] in
             guard let self else { return }
             onFocus?(self)
         }
         addSubview(terminal)
+        self.terminal = terminal
+        picker?.removeFromSuperview()
+        picker = nil
+        title = shell.name
+        onTitleChange?(self)
+        needsLayout = true
+        layoutSubtreeIfNeeded()
+        focus()
     }
 
     @available(*, unavailable)
@@ -70,8 +116,8 @@ final class PaneView: NSView {
         // While a resize animates, the terminal already has its final size
         // and a transform scales it to the box; resizing it here would undo that.
         guard contentAnimation == 0 else { return }
-        terminal.frame = bounds
-        terminal.fitToSize()
+        content?.frame = bounds
+        terminal?.fitToSize()
     }
 
     // MARK: - Animated resize
@@ -88,8 +134,8 @@ final class PaneView: NSView {
     /// instead of snapping, and is crisp when the animation lands.
     func animateContent(from old: CGSize, to new: CGSize, duration: TimeInterval, curve: CubicBezier) {
         guard old.width > 0, old.height > 0, new.width > 0, new.height > 0, old != new, let layer else { return }
-        terminal.frame = CGRect(origin: .zero, size: new)
-        terminal.fitToSize()
+        content?.frame = CGRect(origin: .zero, size: new)
+        terminal?.fitToSize()
         // Sampled along the same curve as the frame, so the content covers
         // the box exactly at every moment, overshoot included.
         let animation = CAKeyframeAnimation(keyPath: "sublayerTransform")
@@ -145,7 +191,7 @@ final class PaneView: NSView {
     }
 
     func focus() {
-        window?.makeFirstResponder(terminal)
+        window?.makeFirstResponder(content)
     }
 
     /// A bright border that cools to the focus blue as the pane lands.
@@ -199,5 +245,16 @@ extension PaneView: TerminalSurfaceTitleDelegate, TerminalSurfacePwdDelegate, Te
 enum Palette {
     static let focus = NSColor(srgbRed: 0x89 / 255, green: 0xB4 / 255, blue: 0xFA / 255, alpha: 1)  // blue
     static let flash = NSColor(srgbRed: 0xB4 / 255, green: 0xBE / 255, blue: 0xFE / 255, alpha: 1) // lavender
+    static let text = NSColor(srgbRed: 0xCD / 255, green: 0xD6 / 255, blue: 0xF4 / 255, alpha: 1)
+    static let subtext = NSColor(srgbRed: 0xA6 / 255, green: 0xAD / 255, blue: 0xC8 / 255, alpha: 1)
+    static let overlay = NSColor(srgbRed: 0x6C / 255, green: 0x70 / 255, blue: 0x86 / 255, alpha: 1)
+    /// Mocha Black, at Ghostty's background-opacity.
+    static let paneBackground = NSColor(srgbRed: 0x0A / 255, green: 0x0A / 255, blue: 0x0A / 255, alpha: 0.92)
+    static let card = NSColor(srgbRed: 0x18 / 255, green: 0x18 / 255, blue: 0x25 / 255, alpha: 1) // mantle
+
+    static func mono(_ size: CGFloat) -> NSFont {
+        NSFont(name: "JetBrainsMono NF", size: size) ?? .monospacedSystemFont(ofSize: size, weight: .regular)
+    }
+
     static let idle = NSColor(srgbRed: 0x45 / 255, green: 0x47 / 255, blue: 0x5A / 255, alpha: 0.6) // surface1
 }

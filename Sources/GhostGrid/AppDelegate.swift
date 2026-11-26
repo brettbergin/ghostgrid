@@ -4,8 +4,11 @@ import GhosttyTerminal
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    /// One Ghostty app instance shared by every pane, like Ghostty itself.
-    private lazy var controller: TerminalController = Self.makeController()
+    /// One Ghostty app instance per shell, created the first time a pane
+    /// picks that shell and shared by every pane running it.
+    private var controllers: [String: TerminalController] = [:]
+    /// The user's config with includes inlined, read once at launch.
+    private lazy var baseConfig: String? = Self.flattenedConfig()
     private var windows: [GridWindowController] = []
 
     func applicationDidFinishLaunching(_: Notification) {
@@ -19,7 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func newWindow(_: Any?) {
-        let window = GridWindowController(controller: controller)
+        let window = GridWindowController { [unowned self] in controller(for: $0) }
         window.onClose = { [weak self] closed in
             self?.windows.removeAll { $0 === closed }
         }
@@ -49,33 +52,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func focusDown(_: Any?) { current?.focus(.down) }
 
     /// Loads the user's own Ghostty config (theme, font, shaders, keybinds),
-    /// so ghostgrid looks like their Ghostty. GHOSTGRID_CONFIG overrides the
-    /// path. The package ignores `config-file` includes, so the config is
-    /// flattened into one file first (see ConfigFlattener). The theme is
-    /// left empty: a non-empty one makes the package re-render the config.
-    private static func makeController() -> TerminalController {
-        let controller = TerminalController(configFilePath: flattenedConfigPath(), theme: TerminalTheme())
+    /// so ghostgrid looks like their Ghostty, plus `command` for `shell`.
+    /// The theme is left empty: a non-empty one makes the package re-render
+    /// the config into a temp file.
+    private func controller(for shell: ShellChoice) -> TerminalController {
+        if let existing = controllers[shell.name] { return existing }
+        let path = Self.writeConfig(ShellConfig.render(base: baseConfig, choice: shell), name: shell.name)
+        let controller = TerminalController(configFilePath: path, theme: TerminalTheme())
         if let issue = controller.lastConfigurationIssue {
-            warn("Ghostty config issue: \(issue)")
+            Self.warn("Ghostty config issue (\(shell.name)): \(issue)")
         }
+        controllers[shell.name] = controller
         return controller
     }
 
-    /// The user's config with includes inlined, written to
-    /// ~/Library/Application Support/ghostgrid/config.ghostty.
-    private static func flattenedConfigPath() -> String? {
+    /// The user's config with includes inlined (see ConfigFlattener).
+    /// GHOSTGRID_CONFIG overrides the entry file.
+    private static func flattenedConfig() -> String? {
         guard let source = configPath() else { return nil }
         do {
-            let contents = try ConfigFlattener.flatten(URL(fileURLWithPath: source))
+            return try ConfigFlattener.flatten(URL(fileURLWithPath: source))
+        } catch {
+            warn("using Ghostty defaults: \(error)")
+            return nil
+        }
+    }
+
+    /// Writes ~/Library/Application Support/ghostgrid/config-<name>.ghostty.
+    private static func writeConfig(_ contents: String?, name: String) -> String? {
+        guard let contents else { return nil }
+        do {
             let dir = try FileManager.default.url(
                 for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true,
             ).appendingPathComponent("ghostgrid", isDirectory: true)
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            let output = dir.appendingPathComponent("config.ghostty")
+            let output = dir.appendingPathComponent("config-\(name).ghostty")
             try contents.write(to: output, atomically: true, encoding: .utf8)
             return output.path
         } catch {
-            warn("using Ghostty defaults: \(error)")
+            warn("cannot write config for \(name): \(error)")
             return nil
         }
     }
