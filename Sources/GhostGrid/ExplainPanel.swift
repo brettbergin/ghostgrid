@@ -8,10 +8,12 @@ import SwiftUI
 enum LocalModel {
     struct Failure: Error { var message: String }
 
-    /// Calls `update` with the answer so far, then `finish` with nil, or
-    /// with what went wrong. Cancel the task to stop.
+    /// Calls `thinking` while the model thinks before answering, `update`
+    /// with the answer so far, then `finish` with nil, or with what went
+    /// wrong. Cancel the task to stop.
     static func explain(
         _ failure: FailedCommand,
+        thinking: @escaping @MainActor () -> Void,
         update: @escaping @MainActor (Explanation) -> Void,
         finish: @escaping @MainActor (String?) -> Void,
     ) -> Task<Void, Never> {
@@ -24,13 +26,16 @@ enum LocalModel {
                     throw Failure(message: "the model endpoint \"\(endpoint)\" is not a URL")
                 }
                 let model = configuredModel.isEmpty ? try await firstModel(at: base) : configuredModel
-                var request = URLRequest(url: base.appendingPathComponent("chat/completions"), timeoutInterval: 120)
+                var request = URLRequest(url: base.appendingPathComponent("chat/completions"), timeoutInterval: 300)
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                 request.httpBody = try ChatStream.requestBody(model: model, messages: ExplainPrompt.messages(for: failure))
                 let (bytes, response) = try await URLSession.shared.bytes(for: request)
                 if let http = response as? HTTPURLResponse, http.statusCode != 200 {
-                    throw Failure(message: "the model server answered HTTP \(http.statusCode)")
+                    var body = Data()
+                    for try await byte in bytes where body.count < 16384 { body.append(byte) }
+                    let reason = ChatStream.serverError(body).map { ": \($0)" } ?? ""
+                    throw Failure(message: "the model server (\(model)) answered HTTP \(http.statusCode)\(reason)")
                 }
                 var text = ""
                 for try await line in bytes.lines {
@@ -43,6 +48,8 @@ enum LocalModel {
                         return
                     case let .failure(message):
                         throw Failure(message: message)
+                    case .thinking:
+                        if text.isEmpty { thinking() }
                     case .ignore:
                         break
                     }
@@ -59,17 +66,27 @@ enum LocalModel {
         }
     }
 
-    /// The first chat model the server has (embedding models skipped).
+    /// The model to ask when Settings names none: with LM Studio, a loaded
+    /// one (see ModelChoice); with another OpenAI-style server, its first
+    /// chat model.
     private static func firstModel(at base: URL) async throws -> String {
-        struct Models: Decodable {
-            struct Model: Decodable { var id: String }
-            var data: [Model]
+        // LM Studio's own listing says which models are loaded; it is
+        // served beside /v1, at /api/v1/models.
+        if base.lastPathComponent == "v1",
+           let (data, response) = try? await URLSession.shared.data(
+               from: base.deletingLastPathComponent().appendingPathComponent("api/v1/models")),
+           (response as? HTTPURLResponse)?.statusCode == 200,
+           String(decoding: data, as: UTF8.self).contains("\"models\"") {
+            guard let model = ModelChoice.pick(lmStudio: data) else {
+                throw Failure(message: "LM Studio has no chat model loaded; load one, or name one in Settings > Explain failures")
+            }
+            return model
         }
         let (data, _) = try await URLSession.shared.data(from: base.appendingPathComponent("models"))
-        guard let models = try? JSONDecoder().decode(Models.self, from: data),
-              let model = models.data.first(where: { !$0.id.localizedCaseInsensitiveContains("embed") })
-        else { throw Failure(message: "the model server has no chat model loaded") }
-        return model.id
+        guard let model = ModelChoice.pick(openAI: data) else {
+            throw Failure(message: "the model server has no chat model loaded")
+        }
+        return model
     }
 }
 
@@ -83,6 +100,8 @@ final class ExplainModel: ObservableObject {
     let exitCode: Int
     @Published var explanation = Explanation(why: "", fix: nil)
     @Published var status = Status.working
+    /// The model is thinking before it answers.
+    @Published var isThinking = false
     @Published var isFocused = false
 
     init(blockID: Int, command: String, exitCode: Int) {
@@ -180,7 +199,9 @@ struct ExplainContent: View {
                     .foregroundStyle(Color(nsColor: Palette.failure))
                     .fixedSize(horizontal: false, vertical: true)
             default:
-                Text(model.explanation.why.isEmpty ? "Asking the local model..." : model.explanation.why)
+                Text(model.explanation.why.isEmpty
+                    ? (model.isThinking ? "The model is thinking before it answers..." : "Asking the local model...")
+                    : model.explanation.why)
                     .font(.system(size: 12))
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)

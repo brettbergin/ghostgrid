@@ -137,9 +137,10 @@ fix it. The answer streams in as the model writes it.
 - Interrupted commands (Ctrl+C, Ctrl+Z, kill) are not explained.
 - Settings > Explain failures: turn the automatic panel off, or set the
   model server and model. The default is LM Studio's local server
-  (`http://localhost:1234/v1`) and its first loaded chat model; any
-  OpenAI-style server works. Output leaves the Mac only if you point it at
-  another machine.
+  (`http://localhost:1234/v1`) and a model it already has loaded,
+  preferring one whose thinking can be turned off (a thinking model can
+  take a minute or more to answer); any OpenAI-style server works. Output
+  leaves the Mac only if you point it at another machine.
 
 ## Broadcast typing
 
