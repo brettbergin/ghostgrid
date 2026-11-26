@@ -3,7 +3,7 @@ TESTING_PLUGINS := /Library/Developer/CommandLineTools/usr/lib/swift/host/plugin
 # search path; full Xcode does not need this.
 TEST_FLAGS := $(if $(wildcard $(TESTING_PLUGINS)),-Xswiftc -plugin-path -Xswiftc $(TESTING_PLUGINS))
 
-.PHONY: build test app debug run check clean
+.PHONY: build test app debug run check clean libghostty
 
 build:
 	swift build
@@ -22,6 +22,10 @@ run: debug
 
 check: test app
 	shellcheck Scripts/*.sh
+
+# Local libghostty with custom shaders (needs Xcode + Zig); see README.
+libghostty:
+	Scripts/build-libghostty.sh
 
 clean:
 	rm -rf .build build
