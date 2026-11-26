@@ -21,14 +21,65 @@ final class PaneTerminalView: AppTerminalView {
         case keyDown(NSEvent), keyUp(NSEvent), modifiers(NSEvent), paste(String)
     }
 
+    /// The pane a key is being replayed into, while it is. AppKit's text
+    /// input answers a key with `insertText` (and marked text, commands) on
+    /// the focused view, whichever view interpreted the key, so without
+    /// this the broadcasting pane typed every replayed key a second time
+    /// and the other panes got only the bare key.
+    private static weak var replaying: PaneTerminalView?
+
     /// Plays typing from the broadcasting pane into this one.
     func replay(_ input: MirroredInput) {
         switch input {
-        case let .keyDown(event): super.keyDown(with: event)
+        case let .keyDown(event):
+            Self.replaying = self
+            defer { Self.replaying = nil }
+            super.keyDown(with: event)
         case let .keyUp(event): super.keyUp(with: event)
         case let .modifiers(event): super.flagsChanged(with: event)
         case let .paste(text): paste(text: text)
         }
+    }
+
+    /// The pane text input should reach: the one a key is being replayed
+    /// into, if that is another pane.
+    private var textInputTarget: PaneTerminalView? {
+        guard let target = Self.replaying, target !== self else { return nil }
+        return target
+    }
+
+    override func insertText(_ string: Any, replacementRange: NSRange) {
+        if let target = textInputTarget { return target.insertText(string, replacementRange: replacementRange) }
+        super.insertText(string, replacementRange: replacementRange)
+    }
+
+    override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        if let target = textInputTarget {
+            return target.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
+        }
+        super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
+    }
+
+    override func unmarkText() {
+        if let target = textInputTarget { return target.unmarkText() }
+        super.unmarkText()
+    }
+
+    override func hasMarkedText() -> Bool {
+        textInputTarget?.hasMarkedText() ?? super.hasMarkedText()
+    }
+
+    override func markedRange() -> NSRange {
+        textInputTarget?.markedRange() ?? super.markedRange()
+    }
+
+    override func selectedRange() -> NSRange {
+        textInputTarget?.selectedRange() ?? super.selectedRange()
+    }
+
+    override func doCommand(by selector: Selector) {
+        if let target = textInputTarget { return target.doCommand(by: selector) }
+        super.doCommand(by: selector)
     }
 
     private func mirrors(_ event: NSEvent) -> Bool {
