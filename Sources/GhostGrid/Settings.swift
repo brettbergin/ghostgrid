@@ -58,6 +58,12 @@ final class GhostGridSettings: ObservableObject {
         didSet { save(showActivityBadges, "showActivityBadges") }
     }
 
+    /// Shells keep running in ghostgrid-sessiond when ghostgrid quits and
+    /// come back, scrollback and all, on the next launch.
+    @Published var keepShellsRunning: Bool {
+        didSet { save(keepShellsRunning, "keepShellsRunning") }
+    }
+
     private init() {
         newPaneUsesLastShell = defaults.object(forKey: "newPaneUsesLastShell") as? Bool ?? true
         offerAppsAfterZsh = defaults.object(forKey: "offerAppsAfterZsh") as? Bool ?? true
@@ -68,6 +74,7 @@ final class GhostGridSettings: ObservableObject {
         defaultLayout = GhostGridCore.GridLayout.Mode(stored: defaults.string(forKey: "defaultLayout"))
         launcherEntries = LaunchCatalog.decode(defaults.data(forKey: "launcherEntries"))
         showActivityBadges = defaults.object(forKey: "showActivityBadges") as? Bool ?? true
+        keepShellsRunning = defaults.object(forKey: "keepShellsRunning") as? Bool ?? true
     }
 
     private func save(_ value: Any?, _ key: String) {
@@ -127,6 +134,15 @@ struct SettingsView: View {
             }
 
             LauncherSettingsSection(settings: settings)
+
+            Section {
+                Toggle("Keep shells running after quitting", isOn: $settings.keepShellsRunning)
+            } header: {
+                Text("Shells")
+            } footer: {
+                Text("A background helper (ghostgrid-sessiond) owns every pane's shell. With this on, quitting ghostgrid leaves shells, their scrollback and running programs going, and the next launch brings the windows back attached to them. Closing a pane or a window always ends its shells.")
+                    .foregroundStyle(.secondary)
+            }
 
             Section {
                 Toggle("Show pane headers (shell, folder, git branch)", isOn: $settings.showPaneHeaders)
@@ -222,6 +238,7 @@ enum SessionRestoreDescription {
         let restores = SessionPolicy.shouldRestore(
             windowSaveState: value,
             systemKeepsWindows: UserDefaults.standard.bool(forKey: "NSQuitAlwaysKeepsWindows"),
+            keepsShells: GhostGridSettings.shared.keepShellsRunning,
         )
         return "\(restores ? "yes" : "no") (window-save-state = \(value))"
     }

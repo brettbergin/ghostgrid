@@ -138,6 +138,7 @@ final class GridView: NSView {
             onTitleChange?(pane.title)
         }
         pane.onWorkingDirectoryChange = { [weak self] _ in self?.onChange?() }
+        pane.onSessionChange = { [weak self] _ in self?.onChange?() }
         pane.onHeaderDrag = { [weak self] pane, phase, point in self?.headerDrag(pane, phase, point) }
         pane.onExit = { [weak self] in self?.remove($0) }
     }
@@ -154,7 +155,8 @@ final class GridView: NSView {
             guard let shell = pane.shell else { continue }
             if pane === focused { focusedIndex = saved.count }
             if pane === zoomed { zoomedIndex = saved.count }
-            saved.append(.init(shell: shell.name, workingDirectory: pane.workingDirectory))
+            saved.append(.init(shell: shell.name, workingDirectory: pane.workingDirectory,
+                               sessionID: settings.keepShellsRunning ? pane.sessionID : nil))
         }
         // Weights only make sense for the full pane set; a pane still in its
         // menu is not saved, so they would not fit.
@@ -173,6 +175,7 @@ final class GridView: NSView {
                 shells: shells,
                 shell: shell,
                 preferred: ShellCatalog.remembered(settings.lastShell, in: shells),
+                sessionID: shell == nil ? nil : saved.sessionID,
             )
             wire(pane)
             panes.append(pane)
@@ -185,8 +188,15 @@ final class GridView: NSView {
         (window.focused.map { panes[$0] } ?? panes.last)?.focus()
     }
 
+    /// Ends every pane's shell (the window is closing for good, or
+    /// ghostgrid is quitting without keeping shells).
+    func endAllShells() {
+        panes.forEach { $0.endShell() }
+    }
+
     private func remove(_ pane: PaneView) {
         guard let index = panes.firstIndex(of: pane) else { return }
+        pane.endShell()
         panes.remove(at: index)
         weights = nil // one pane fewer: back to balanced
         if zoomed === pane { zoomed = nil }

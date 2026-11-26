@@ -116,17 +116,42 @@ optional in Settings; with headers off, badges sit in the pane's corner.
 Finished-command badges need shell integration (zsh and bash via
 Ghostty's, nushell natively).
 
+## Shells that survive quitting
+
+Every pane's shell runs in a small background helper,
+`ghostgrid-sessiond` (bundled in `Contents/MacOS`), not under the app.
+Quit ghostgrid and the shells keep going: running programs, builds, an
+agent mid-task. Relaunch and each pane reattaches to its shell and gets
+its recent output back (up to 4 MiB per pane), so the screen looks as you
+left it. Programs that draw full-screen (vim, btop, lazygit) are asked to
+redraw on reattach.
+
+- Closing a pane or a window ends its shells; only quitting keeps them.
+- Settings > Shells > "Keep shells running after quitting" turns it off:
+  quitting then ends every shell, as before.
+- If a kept shell is gone on relaunch (it exited, or the Mac restarted),
+  the pane starts a fresh shell in the same folder.
+- The helper starts on demand, listens on a user-only socket in
+  `~/Library/Application Support/ghostgrid/` (one per protocol version, so
+  an update never talks to an older helper), logs to
+  `~/Library/Logs/ghostgrid/sessiond.log`, and exits on its own 30 s after
+  its last shell and pane are gone.
+- If the helper cannot start, panes fall back to running their shell
+  directly (it then ends with the app).
+
 ## Session restore
 
 Quit and relaunch, and ghostgrid reopens your windows where they were,
-with the same panes in the same order, each running its shell in the
-folder it was in, plus which pane had focus and which was zoomed.
-Scrollback and running programs are not restored (Ghostty does not
-restore them either). It follows Ghostty's `window-save-state`: `always`
-restores, `never` does not, and `default` follows macOS's "Close windows
-when quitting an application". Closing a window yourself drops it from the
-session. Saved to `~/Library/Application Support/ghostgrid/session.json`
-on quit and shortly after each change, so a crash loses little.
+with the same panes in the same order, plus which pane had focus and
+which was zoomed. With kept shells (above) each pane comes back attached
+to its running shell; otherwise each starts its shell again in the folder
+it was in, without scrollback. It follows Ghostty's `window-save-state`:
+`always` restores, `never` does not (and ends kept shells), and `default`
+follows macOS's "Close windows when quitting an application", except that
+windows with kept shells always come back. Closing a window yourself drops
+it from the session. Saved to
+`~/Library/Application Support/ghostgrid/session.json` on quit and shortly
+after each change, so a crash loses little.
 
 ## Settings
 
@@ -232,6 +257,11 @@ upgrading libghostty-spm.
 ## How it is put together
 
 - `Sources/GhostGrid`: the AppKit app (window, grid view, panes, menu).
+- `Sources/ghostgrid-sessiond`: the helper that owns each pane's shell
+  (forkpty, output history, one Unix-socket connection per pane). The
+  wire format, history and shell launch rules live in
+  `GhostGridCore/SessionProtocol.swift`; panes use libghostty's in-memory
+  backend to talk to it.
 - `Sources/GhostGridCore`: AppKit-free logic with unit tests:
   `GridLayout` (frames, directional neighbours), `ConfigFlattener`,
   `ShellCatalog`/`ShellConfig` and `ContentScale` (animation curve math).
