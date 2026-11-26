@@ -168,6 +168,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     @objc func newPaneChoosingShell(_: Any?) { current?.addPane(chooseShell: true) }
     @objc func closePane(_: Any?) { current?.closeFocused() }
     @objc func toggleZoom(_: Any?) { current?.toggleZoom() }
+    /// Cmd+Shift+B: the focused pane's commands, foldable, to copy, rerun or share.
+    @objc func toggleCommandBlocks(_: Any?) { current?.focused?.toggleBlocks() }
+    /// Cmd+Opt+Shift+C: the last finished command's output to the clipboard.
+    @objc func copyLastCommandOutput(_: Any?) {
+        if current?.focused?.copyLastOutput() != true { NSSound.beep() }
+    }
     /// Cmd+Opt+I: type into every pane of the window at once.
     @objc func toggleBroadcast(_: Any?) { current?.broadcasting.toggle() }
     @objc func nextPane(_: Any?) { current?.focusNext(1) }

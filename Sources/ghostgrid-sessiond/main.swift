@@ -348,4 +348,18 @@ final class Server {
 
 let server = Server()
 server.listen()
+
+// Say why we stop: a quiet death would look like lost shells.
+var signalSources: [DispatchSourceSignal] = []
+for number in [SIGTERM, SIGINT, SIGQUIT] {
+    signal(number, SIG_IGN)
+    let source = DispatchSource.makeSignalSource(signal: number, queue: .main)
+    source.setEventHandler {
+        log("signal \(number): exiting, ending \(server.sessions.count) shells")
+        unlink(socketPath)
+        exit(0)
+    }
+    source.resume()
+    signalSources.append(source)
+}
 dispatchMain()

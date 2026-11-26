@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import GhostGridCore
 import GhosttyTerminal
 
@@ -90,6 +91,9 @@ final class PaneView: NSView {
     /// The connection to sessiond carrying this pane's shell.
     private var client: SessionClient?
     private var startedAt = Date()
+    /// Commands run in this pane, read from its output (commands as blocks).
+    let blocks = CommandBlockStore()
+    private var blocksPanel: NSHostingView<CommandBlocksView>?
     /// Dims the pane while it is not focused (`unfocused-split-opacity`).
     private let dimView = PassthroughView()
     /// Shown while a search runs (Cmd+F, Ghostty's start_search).
@@ -350,8 +354,14 @@ final class PaneView: NSView {
         } else {
             return nil
         }
-        client.onAttached = { replay in host.receiveReplay(replay) }
-        client.onOutput = { data in host.receive(data) }
+        client.onAttached = { [weak self] replay in
+            host.receiveReplay(replay)
+            self?.blocks.replace(with: replay)
+        }
+        client.onOutput = { [weak self] data in
+            host.receive(data)
+            self?.blocks.feed(data)
+        }
         client.onExit = { [weak self] code in
             guard let self else { return }
             sessionID = nil
@@ -399,6 +409,7 @@ final class PaneView: NSView {
             terminfo: GhosttyRuntimeResources.terminfoDirectoryURL?.path ?? "",
             features: ShellLaunch.features(config: values.string("shell-integration-features")),
             integration: ShellLaunch.usesIntegration(shell: shell.name, config: values.string("shell-integration")),
+            hooks: HookFiles.directory,
         )
         var base = ProcessInfo.processInfo.environment
         // The app's own launch context, not the shell's.
@@ -448,6 +459,7 @@ final class PaneView: NSView {
         dimView.frame = bounds
         layoutChrome(for: bounds.size)
         layoutSearchBar()
+        blocksPanel?.frame = contentRect(for: bounds.size).insetBy(dx: 6, dy: 6)
         // While a resize animates, the terminal already has its final size
         // and a transform scales it to the box; resizing it here would undo that.
         guard contentAnimation == 0 else { return }
@@ -673,6 +685,61 @@ final class PaneView: NSView {
         }
         if !NSApp.isActive {
             NSApp.requestUserAttention(.informationalRequest)
+        }
+    }
+
+    // MARK: - Command blocks
+
+    /// Shows or hides the pane's command list (Pane > Command Blocks).
+    func toggleBlocks() {
+        if let panel = blocksPanel {
+            blocksPanel = nil
+            blocks.isWatched = false
+            panel.removeFromSuperview()
+            window?.makeFirstResponder(terminal)
+            return
+        }
+        let actions = CommandBlockActions(
+            copy: { text in
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+            },
+            rerun: { [weak self] command in
+                self?.toggleBlocks()
+                self?.run(command)
+            },
+            close: { [weak self] in self?.toggleBlocks() },
+        )
+        blocks.isWatched = true
+        let panel = NSHostingView(rootView: CommandBlocksView(store: blocks, actions: actions))
+        panel.wantsLayer = true
+        panel.layer?.cornerRadius = 8
+        panel.layer?.masksToBounds = true
+        addSubview(panel, positioned: .above, relativeTo: nil)
+        blocksPanel = panel
+        needsLayout = true
+    }
+
+    /// Copies the output of the last finished command; false when there is none.
+    @discardableResult
+    func copyLastOutput() -> Bool {
+        guard let block = blocks.all.last(where: \.isFinished) else { return false }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(block.output, forType: .string)
+        return true
+    }
+
+    /// Types `command` at the prompt and runs it. Several lines go in as
+    /// one paste, so the shell gets them as a whole.
+    private func run(_ command: String) {
+        guard let terminal else { return }
+        focus()
+        if command.contains("\n") {
+            terminal.paste(text: command)
+            terminal.sendKey(.enter)
+        } else {
+            pendingCommand = command
+            sendPendingCommand()
         }
     }
 

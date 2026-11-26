@@ -197,12 +197,16 @@ public enum ShellLaunch {
         public var features: String
         /// false when the config says shell-integration = none.
         public var integration: Bool
+        /// ghostgrid's hook files (``ShellHooks``), which wrap Ghostty's
+        /// integration; nil starts the shells with Ghostty's alone.
+        public var hooks: String?
 
-        public init(ghostty: String, terminfo: String, features: String, integration: Bool) {
+        public init(ghostty: String, terminfo: String, features: String, integration: Bool, hooks: String? = nil) {
             self.ghostty = ghostty
             self.terminfo = terminfo
             self.features = features
             self.integration = integration
+            self.hooks = hooks
         }
     }
 
@@ -261,12 +265,21 @@ public enum ShellLaunch {
             // ZDOTDIR and loads the integration after .zshrc.
             if let original = base["ZDOTDIR"] { environment["GHOSTTY_ZSH_ZDOTDIR"] = original }
             environment["ZDOTDIR"] = resources.ghostty + "/shell-integration/zsh"
+            if let hooks = resources.hooks {
+                // ghostgrid's .zshenv runs Ghostty's, then adds its hook.
+                environment["GHOSTGRID_GHOSTTY_ZDOTDIR"] = environment["ZDOTDIR"]
+                environment["ZDOTDIR"] = hooks + "/zsh"
+            }
         case "bash" where integration:
             // bash --posix reads $ENV; Ghostty's script turns posix mode off
             // and sources the user's startup files itself.
             arguments.append("--posix")
             if let original = base["ENV"] { environment["GHOSTTY_BASH_ENV"] = original }
             environment["ENV"] = resources.ghostty + "/shell-integration/bash/ghostty.bash"
+            if let hooks = resources.hooks {
+                environment["GHOSTGRID_GHOSTTY_ENV"] = environment["ENV"]
+                environment["ENV"] = hooks + "/bash/ghostgrid.bash"
+            }
             environment["GHOSTTY_BASH_INJECT"] = "1"
             if base["HISTFILE"] == nil {
                 // posix mode defaults HISTFILE to ~/.sh_history.

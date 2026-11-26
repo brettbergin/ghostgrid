@@ -91,11 +91,33 @@ zsh and bash integration only, so other shells (nushell) run with
 | Cmd+Shift+L           | Next layout (Grid, Main + Stack, Columns) |
 | Cmd+Ctrl+=            | Equalize panes (undo divider drags)      |
 | Cmd+Option+I          | Broadcast typing to every pane on/off    |
+| Cmd+Shift+B           | Command blocks of the focused pane       |
+| Cmd+Option+Shift+C    | Copy the last command's output           |
 | Cmd+N                 | New window                               |
 | Cmd+,                 | ghostgrid Settings                       |
 
 These win over Ghostty keybindings with the same keys; every other key
 goes to the terminal (so Ghostty's own bindings still work).
+
+## Commands as blocks
+
+Every command you run becomes a block: its command line, its output as
+plain text, how it ended and how long it took. Pane > Command Blocks
+(Cmd+Shift+B) lists the pane's blocks, newest last:
+
+- Fold or unfold each block's output (or all of them).
+- Copy a block (command and output), run it again, or share it with the
+  macOS share sheet.
+- Pane > Copy Last Command Output (Cmd+Opt+Shift+C) copies the output of
+  the last finished command without opening the list.
+
+Blocks come from the shell integration's prompt marks (OSC 133). The
+command line is reported by a small hook ghostgrid adds after Ghostty's
+zsh and bash integration (OSC 633;E, as VS Code does); the hook files
+live in `~/Library/Application Support/ghostgrid/hooks` and are rewritten
+on each launch. nushell's own marks give blocks without the command line.
+The last 200 commands per pane are kept, with up to 256 KiB of output
+each (the end of longer output), and they come back with kept shells.
 
 ## Broadcast typing
 
@@ -148,7 +170,10 @@ redraw on reattach.
   quitting then ends every shell, as before.
 - If a kept shell is gone on relaunch (it exited, or the Mac restarted),
   the pane starts a fresh shell in the same folder.
-- The helper starts on demand, listens on a user-only socket in
+- The helper starts on demand as its own launchd job
+  (`com.brettbergin.ghostgrid.sessiond.v1`, in memory only, so nothing is
+  installed and a restart clears it): macOS ends every process an app
+  started when the app quits. It listens on a user-only socket in
   `~/Library/Application Support/ghostgrid/` (one per protocol version, so
   an update never talks to an older helper), logs to
   `~/Library/Logs/ghostgrid/sessiond.log`, and exits on its own 30 s after

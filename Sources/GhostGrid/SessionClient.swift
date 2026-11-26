@@ -143,6 +143,23 @@ extension SessionClient {
     }
 }
 
+/// ghostgrid's shell hook files (ShellHooks), written once per launch to
+/// ~/Library/Application Support/ghostgrid/hooks; nil if that failed.
+enum HookFiles {
+    static let directory: String? = {
+        guard let base = try? FileManager.default.url(
+            for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true,
+        ) else { return nil }
+        let path = base.appendingPathComponent("ghostgrid/hooks", isDirectory: true).path
+        do {
+            try ShellHooks.install(in: path)
+            return path
+        } catch {
+            return nil
+        }
+    }()
+}
+
 /// Finding and starting ghostgrid-sessiond.
 enum SessionDaemon {
     /// One socket per protocol version, so an app update never talks to an
@@ -198,13 +215,46 @@ enum SessionDaemon {
         return fd
     }
 
-    /// Starts sessiond in its own session (setsid), so it outlives the app,
-    /// logging to ~/Library/Logs/ghostgrid/sessiond.log.
+    /// launchd's name for the helper job, one per protocol version.
+    static let jobLabel = "com.brettbergin.ghostgrid.sessiond.v\(SessionMessage.protocolVersion)"
+
+    /// Starts sessiond, logging to ~/Library/Logs/ghostgrid/sessiond.log.
+    /// It runs as its own launchd job: macOS ends every process an app
+    /// started when the app quits (SIGTERM), even one in its own session,
+    /// and the helper must outlive the app. The job lives in memory only
+    /// (gone after a restart); launchd restarts it only if it fails, so
+    /// its idle exit stays an exit. Spawned directly if launchd refuses.
     private static func start() -> Bool {
         let path = executable
         guard FileManager.default.isExecutableFile(atPath: path) else { return false }
         let logs = NSHomeDirectory() + "/Library/Logs/ghostgrid"
         try? FileManager.default.createDirectory(atPath: logs, withIntermediateDirectories: true)
+        let log = logs + "/sessiond.log"
+        // A job of the same name that already ended blocks a new submit.
+        _ = launchctl(["remove", jobLabel])
+        if launchctl(["submit", "-l", jobLabel, "-o", log, "-e", log, "--", path, "--socket", socketPath]) {
+            return true
+        }
+        return spawn(path, log: log)
+    }
+
+    private static func launchctl(_ arguments: [String]) -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        process.arguments = arguments
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+        } catch {
+            return false
+        }
+        process.waitUntilExit()
+        return process.terminationStatus == 0
+    }
+
+    /// Fallback: in its own session (setsid). It then ends when the app quits.
+    private static func spawn(_ path: String, log: String) -> Bool {
         var attributes: posix_spawnattr_t?
         posix_spawnattr_init(&attributes)
         posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETSID | POSIX_SPAWN_CLOEXEC_DEFAULT))
@@ -212,7 +262,7 @@ enum SessionDaemon {
         posix_spawn_file_actions_init(&actions)
         posix_spawn_file_actions_addopen(&actions, 0, "/dev/null", O_RDONLY, 0)
         posix_spawn_file_actions_addopen(&actions, 1, "/dev/null", O_WRONLY, 0)
-        posix_spawn_file_actions_addopen(&actions, 2, logs + "/sessiond.log", O_WRONLY | O_CREAT | O_APPEND, 0o600)
+        posix_spawn_file_actions_addopen(&actions, 2, log, O_WRONLY | O_CREAT | O_APPEND, 0o600)
         defer {
             posix_spawnattr_destroy(&attributes)
             posix_spawn_file_actions_destroy(&actions)
