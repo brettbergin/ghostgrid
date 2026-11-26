@@ -49,9 +49,14 @@ public enum GridLayout {
 
     /// Frames for `count` panes, with the divider adjustments in `weights`
     /// (nil, or weights made for another pane count or mode: balanced).
-    public static func frames(count: Int, in bounds: CGRect, gap: CGFloat, mode: Mode, weights: LayoutWeights?) -> [CGRect] {
+    /// `rows`: the grid's panes per row, top to bottom, after rows were
+    /// moved (see ``move(_:onto:count:mode:rows:weights:)``); nil, or a
+    /// shape that does not fit: the balanced one, short row last.
+    public static func frames(
+        count: Int, in bounds: CGRect, gap: CGFloat, mode: Mode, weights: LayoutWeights?, rows: [Int]? = nil,
+    ) -> [CGRect] {
         guard count > 0, bounds.width > 0, bounds.height > 0 else { return [] }
-        let structure = Structure(count: count, mode: mode)
+        let structure = Structure(count: count, mode: mode, rows: rows)
         let (tracks, cells) = structure.resolve(weights)
         return oriented(bounds) { space in
             structure.frames(in: space, gap: gap, tracks: tracks, cells: cells)
@@ -62,11 +67,11 @@ public enum GridLayout {
     /// main/stack split) and between cells of a track. Each rect covers the
     /// gap, at least `minimumThickness` wide so it can be grabbed with no gap.
     public static func splitters(
-        count: Int, in bounds: CGRect, gap: CGFloat, mode: Mode, weights: LayoutWeights?,
+        count: Int, in bounds: CGRect, gap: CGFloat, mode: Mode, weights: LayoutWeights?, rows: [Int]? = nil,
         minimumThickness: CGFloat = 8,
     ) -> [Splitter] {
         guard count > 1, bounds.width > 0, bounds.height > 0 else { return [] }
-        let structure = Structure(count: count, mode: mode)
+        let structure = Structure(count: count, mode: mode, rows: rows)
         let (tracks, cells) = structure.resolve(weights)
         let tall = bounds.height > bounds.width
         let space = tall ? transposed(bounds) : bounds
@@ -80,9 +85,9 @@ public enum GridLayout {
     /// `minimum` points.
     public static func drag(
         _ kind: Splitter.Kind, by delta: CGFloat, count: Int, in bounds: CGRect, gap: CGFloat,
-        mode: Mode, weights: LayoutWeights?, minimum: CGFloat,
+        mode: Mode, weights: LayoutWeights?, rows: [Int]? = nil, minimum: CGFloat,
     ) -> LayoutWeights {
-        let structure = Structure(count: count, mode: mode)
+        let structure = Structure(count: count, mode: mode, rows: rows)
         var (tracks, cells) = structure.resolve(weights)
         let tall = bounds.height > bounds.width
         let space = tall ? transposed(bounds) : bounds
@@ -140,7 +145,7 @@ public enum GridLayout {
         var cellCounts: [Int]
         var defaultTracks: [Double]
 
-        init(count: Int, mode: Mode) {
+        init(count: Int, mode: Mode, rows moved: [Int]? = nil) {
             switch mode {
             case .mainStack where count > 1:
                 tracksAlongY = false
@@ -156,6 +161,10 @@ public enum GridLayout {
                 tracksAlongY = true
                 cellCounts = (0..<rows).map { $0 == rows - 1 ? count - columns * (rows - 1) : columns }
                 defaultTracks = Array(repeating: 1, count: rows)
+                // Rows moved with move(_:onto:...): the same rows, reordered.
+                if mode == .grid, let moved, moved.sorted() == cellCounts.sorted() {
+                    cellCounts = moved
+                }
             }
         }
 
@@ -235,6 +244,54 @@ public enum GridLayout {
             }
             return result
         }
+    }
+
+    /// What moving one pane onto another does to a window's layout.
+    public struct Rearrangement: Equatable, Sendable {
+        /// The new grid order, as indices into the old one.
+        public var order: [Int]
+        /// The grid's panes per row after the move (nil: balanced).
+        public var rows: [Int]?
+        public var weights: LayoutWeights?
+        /// The panes (old indices) that make way: the target pane, or its
+        /// whole row when rows trade places. For the drop highlight.
+        public var displaced: [Int]
+    }
+
+    /// Moving the pane at `from` onto the pane at `to` (a Swap command or
+    /// a drop). In the grid, a pane moving into a row with a different
+    /// number of panes takes its row with it: the two rows trade places,
+    /// sizes and all, so a long pane stays long. Otherwise the two panes
+    /// trade places and the layout keeps its shape.
+    public static func move(
+        _ from: Int, onto to: Int, count: Int, mode: Mode, rows: [Int]?, weights: LayoutWeights?,
+    ) -> Rearrangement {
+        var order = Array(0..<count)
+        guard order.indices.contains(from), order.indices.contains(to), from != to else {
+            return Rearrangement(order: order, rows: rows, weights: weights, displaced: [])
+        }
+        let structure = Structure(count: count, mode: mode, rows: rows)
+        let counts = structure.cellCounts
+        let starts = counts.indices.map { counts[..<$0].reduce(0, +) }
+        func track(of pane: Int) -> Int { starts.lastIndex { $0 <= pane } ?? 0 }
+        let (source, target) = (track(of: from), track(of: to))
+        guard mode == .grid, source != target, counts[source] != counts[target] else {
+            order.swapAt(from, to)
+            return Rearrangement(order: order, rows: rows, weights: weights, displaced: [to])
+        }
+        // The two rows trade places, each with its panes and its sizes.
+        var tracks = Array(counts.indices)
+        tracks.swapAt(source, target)
+        order = tracks.flatMap { Array(starts[$0]..<starts[$0] + counts[$0]) }
+        let moved = tracks.map { counts[$0] }
+        let resolved = structure.resolve(weights)
+        return Rearrangement(
+            order: order,
+            rows: moved == Structure(count: count, mode: mode).cellCounts ? nil : moved,
+            weights: weights == nil ? nil
+                : LayoutWeights(tracks: tracks.map { resolved.tracks[$0] }, cells: tracks.map { resolved.cells[$0] }),
+            displaced: Array(starts[target]..<starts[target] + counts[target]),
+        )
     }
 
     /// The pane under `point`, if any (for dropping a dragged pane).

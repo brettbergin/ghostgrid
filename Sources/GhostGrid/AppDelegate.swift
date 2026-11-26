@@ -148,7 +148,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             let grid = controller.grid.snapshot()
             return Session.Window(
                 frame: window.frame, panes: grid.panes, focused: grid.focused, zoomed: grid.zoomed, layout: grid.layout,
-                weights: grid.weights,
+                weights: grid.weights, rows: grid.rows,
             )
         }
         SessionStore.save(Session(windows: saved))

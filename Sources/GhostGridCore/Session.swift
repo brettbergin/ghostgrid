@@ -28,12 +28,15 @@ public struct Session: Codable, Equatable, Sendable {
         public var layout: GridLayout.Mode?
         /// Divider adjustments (resizable panes); nil: balanced.
         public var weights: LayoutWeights?
+        /// The grid's panes per row after rows were moved; nil: balanced.
+        public var rows: [Int]?
 
         public init(
             frame: CGRect, panes: [Pane], focused: Int? = nil, zoomed: Int? = nil, layout: GridLayout.Mode? = nil,
-            weights: LayoutWeights? = nil,
+            weights: LayoutWeights? = nil, rows: [Int]? = nil,
         ) {
             self.weights = weights
+            self.rows = rows
             self.frame = frame
             self.panes = panes
             self.focused = focused
