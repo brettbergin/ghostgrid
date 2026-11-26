@@ -25,6 +25,18 @@ public enum ShellHooks {
     }
     """#
 
+    /// Setuid programs ignore TERMINFO (ncurses reads only the system
+    /// database for them), so macOS's /usr/bin/top fails with "Error
+    /// opening terminal: xterm-ghostty". Run it as xterm-256color unless
+    /// the system database has xterm-ghostty. An alias or function of the
+    /// user's own, set later in their startup files, still wins.
+    static let setuidTerminal = #"""
+    if [[ "${TERM:-}" == xterm-ghostty && ! -e /usr/share/terminfo/78/xterm-ghostty \
+          && ! -e /usr/share/terminfo/x/xterm-ghostty && ! -e /lib/terminfo/x/xterm-ghostty ]]; then
+        top() { TERM=xterm-256color command top "$@"; }
+    fi
+    """#
+
     static let zshenv = """
     # ghostgrid: Ghostty's zsh integration, then a hook reporting each
     # command line (commands as blocks). Generated; edits are overwritten.
@@ -39,6 +51,8 @@ public enum ShellHooks {
     unset GHOSTGRID_GHOSTTY_ZDOTDIR
 
     \(reportFunction)
+
+    \(setuidTerminal)
 
     if [[ -o interactive ]]; then
         autoload -Uz add-zsh-hook && add-zsh-hook preexec _ghostgrid_report_command
@@ -55,6 +69,8 @@ public enum ShellHooks {
     builtin unset GHOSTGRID_GHOSTTY_ENV
 
     \(reportFunction)
+
+    \(setuidTerminal)
 
     if [[ $- == *i* ]]; then
         preexec_functions+=(_ghostgrid_report_command)
