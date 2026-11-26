@@ -14,8 +14,34 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp "$BIN/GhostGrid" "$APP/Contents/MacOS/GhostGrid"
-# The helper that keeps shells running after the app quits.
-cp "$BIN/ghostgrid-sessiond" "$APP/Contents/MacOS/ghostgrid-sessiond"
+# The helper that keeps shells running after the app quits: a background-
+# only app of its own, so LaunchServices runs it as its own launchd job and
+# it is not ended with ghostgrid (see SessionDaemon.start).
+HELPER="$APP/Contents/Helpers/ghostgrid-sessiond.app"
+mkdir -p "$HELPER/Contents/MacOS"
+cp "$BIN/ghostgrid-sessiond" "$HELPER/Contents/MacOS/ghostgrid-sessiond"
+cat >"$HELPER/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleExecutable</key>
+	<string>ghostgrid-sessiond</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.brettbergin.ghostgrid.sessiond</string>
+	<key>CFBundleName</key>
+	<string>ghostgrid-sessiond</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSBackgroundOnly</key>
+	<true/>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+</dict>
+</plist>
+PLIST
 # SwiftPM resource bundles (GhosttyTerminal's shell integration, terminfo).
 # The package looks for them in Contents/Resources.
 cp -R "$BIN"/*.bundle "$APP/Contents/Resources/"

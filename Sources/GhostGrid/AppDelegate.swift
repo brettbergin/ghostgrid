@@ -170,6 +170,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     @objc func toggleZoom(_: Any?) { current?.toggleZoom() }
     /// Cmd+Shift+B: the focused pane's commands, foldable, to copy, rerun or share.
     @objc func toggleCommandBlocks(_: Any?) { current?.focused?.toggleBlocks() }
+    /// Cmd+Shift+E: why the last failed command failed, from the local model.
+    @objc func explainLastFailure(_: Any?) {
+        if current?.focused?.explainLastFailure() != true { NSSound.beep() }
+    }
     /// Cmd+Opt+Shift+C: the last finished command's output to the clipboard.
     @objc func copyLastCommandOutput(_: Any?) {
         if current?.focused?.copyLastOutput() != true { NSSound.beep() }

@@ -15,9 +15,25 @@ final class CommandBlockStore: ObservableObject {
     var latest: CommandBlock? { parser.blocks.last }
     var all: [CommandBlock] { parser.blocks }
 
+    /// A command started (the shell ran something new).
+    var onStart: ((CommandBlock) -> Void)?
+    /// A command finished, live (not from a replay).
+    var onFinish: ((CommandBlock) -> Void)?
+    private var lastStarted: Int?
+    private var lastFinished: Int?
+
     func feed(_ data: Data) {
         parser.feed(data)
         if isWatched { blocks = parser.blocks }
+        guard let last = parser.blocks.last else { return }
+        if last.id != lastStarted {
+            lastStarted = last.id
+            onStart?(last)
+        }
+        if last.isFinished, last.id != lastFinished {
+            lastFinished = last.id
+            onFinish?(last)
+        }
     }
 
     /// The pane's screen was rebuilt from a replay: read it afresh.
@@ -25,6 +41,8 @@ final class CommandBlockStore: ObservableObject {
         parser.reset()
         parser.feed(replay, replayed: true)
         if isWatched { blocks = parser.blocks }
+        lastStarted = parser.blocks.last?.id
+        lastFinished = parser.blocks.last(where: \.isFinished)?.id
     }
 }
 

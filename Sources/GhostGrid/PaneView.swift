@@ -94,6 +94,8 @@ final class PaneView: NSView {
     /// Commands run in this pane, read from its output (commands as blocks).
     let blocks = CommandBlockStore()
     private var blocksPanel: NSHostingView<CommandBlocksView>?
+    private var explainPanel: ExplainPanelView?
+    private var explainTask: Task<Void, Never>?
     /// Dims the pane while it is not focused (`unfocused-split-opacity`).
     private let dimView = PassthroughView()
     /// Shown while a search runs (Cmd+F, Ghostty's start_search).
@@ -201,6 +203,11 @@ final class PaneView: NSView {
             self, selector: #selector(settingsChanged), name: GhostGridSettings.didChange, object: nil,
         )
         applyChromeSettings()
+        blocks.onStart = { [weak self] _ in self?.hideExplain() }
+        blocks.onFinish = { [weak self] block in
+            guard let self, settings.explainFailures, isFocusedPane else { return }
+            if ExplainPolicy.offers(exitCode: block.exitCode, command: block.command) { showExplain(for: block, focus: false) }
+        }
 
         if let shell {
             start(shell)
@@ -460,6 +467,7 @@ final class PaneView: NSView {
         layoutChrome(for: bounds.size)
         layoutSearchBar()
         blocksPanel?.frame = contentRect(for: bounds.size).insetBy(dx: 6, dy: 6)
+        layoutExplainPanel()
         // While a resize animates, the terminal already has its final size
         // and a transform scales it to the box; resizing it here would undo that.
         guard contentAnimation == 0 else { return }
@@ -718,6 +726,67 @@ final class PaneView: NSView {
         addSubview(panel, positioned: .above, relativeTo: nil)
         blocksPanel = panel
         needsLayout = true
+    }
+
+    // MARK: - Explain failures
+
+    /// Pane > Explain Last Failure: explains the last failed command (or
+    /// focuses its panel if it is already up), so Return runs the fix.
+    @discardableResult
+    func explainLastFailure() -> Bool {
+        if let panel = explainPanel {
+            window?.makeFirstResponder(panel)
+            return true
+        }
+        guard let block = blocks.all.last(where: { ExplainPolicy.offers(exitCode: $0.exitCode, command: $0.command) })
+        else { return false }
+        showExplain(for: block, focus: true)
+        return true
+    }
+
+    private func showExplain(for block: CommandBlock, focus: Bool) {
+        guard let command = block.command, let exitCode = block.exitCode else { return }
+        hideExplain()
+        let model = ExplainModel(blockID: block.id, command: command, exitCode: exitCode)
+        let panel = ExplainPanelView(model: model)
+        panel.onRun = { [weak self] fix in
+            self?.hideExplain()
+            self?.run(fix)
+        }
+        panel.onDismiss = { [weak self] in self?.hideExplain() }
+        panel.onForward = { [weak self] event in self?.terminal?.keyDown(with: event) }
+        addSubview(panel, positioned: .above, relativeTo: nil)
+        explainPanel = panel
+        layoutExplainPanel()
+        if focus { window?.makeFirstResponder(panel) }
+        let failure = FailedCommand(command: command, output: block.output, exitCode: exitCode,
+                                    shell: shell?.name ?? "zsh", directory: workingDirectory)
+        explainTask = LocalModel.explain(failure, update: { [weak self, weak model] explanation in
+            model?.explanation = explanation
+            self?.layoutExplainPanel()
+        }, finish: { [weak self, weak model] error in
+            model?.status = error.map { .failed($0) } ?? .done
+            self?.layoutExplainPanel()
+        })
+    }
+
+    private func hideExplain() {
+        explainTask?.cancel()
+        explainTask = nil
+        guard let panel = explainPanel else { return }
+        explainPanel = nil
+        let hadFocus = window?.firstResponder === panel
+        panel.removeFromSuperview()
+        if hadFocus { window?.makeFirstResponder(terminal) }
+    }
+
+    private func layoutExplainPanel() {
+        guard let panel = explainPanel else { return }
+        let area = contentRect(for: bounds.size).insetBy(dx: 8, dy: 8)
+        panel.frame = CGRect(x: area.minX, y: 0, width: area.width, height: 10)
+        panel.layoutSubtreeIfNeeded()
+        let height = min(panel.fittingHeight, area.height * 0.6)
+        panel.frame = CGRect(x: area.minX, y: area.maxY - height, width: area.width, height: height)
     }
 
     /// Copies the output of the last finished command; false when there is none.

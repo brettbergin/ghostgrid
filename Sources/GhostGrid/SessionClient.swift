@@ -1,3 +1,4 @@
+import AppKit
 import Darwin
 import Foundation
 import GhostGridCore
@@ -173,16 +174,20 @@ enum SessionDaemon {
         return base + "/sessiond-v\(SessionMessage.protocolVersion).sock"
     }
 
-    /// The helper next to the app's executable (Contents/MacOS).
+    /// The helper, a background-only app inside ghostgrid's bundle.
+    static var helperApp: URL {
+        Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/ghostgrid-sessiond.app")
+    }
+
     static var executable: String {
-        Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/ghostgrid-sessiond").path
+        helperApp.appendingPathComponent("Contents/MacOS/ghostgrid-sessiond").path
     }
 
     /// A connected, non-blocking socket to sessiond, starting it if needed.
     static func connect() -> Int32? {
         if let fd = tryConnect() { return fd }
         guard start() else { return nil }
-        for _ in 0..<40 { // up to 2 s for it to listen
+        for _ in 0..<100 { // up to 5 s for it to listen
             usleep(50_000)
             if let fd = tryConnect() { return fd }
         }
@@ -215,42 +220,49 @@ enum SessionDaemon {
         return fd
     }
 
-    /// launchd's name for the helper job, one per protocol version.
-    static let jobLabel = "com.brettbergin.ghostgrid.sessiond.v\(SessionMessage.protocolVersion)"
-
     /// Starts sessiond, logging to ~/Library/Logs/ghostgrid/sessiond.log.
-    /// It runs as its own launchd job: macOS ends every process an app
-    /// started when the app quits (SIGTERM), even one in its own session,
-    /// and the helper must outlive the app. The job lives in memory only
-    /// (gone after a restart); launchd restarts it only if it fails, so
-    /// its idle exit stays an exit. Spawned directly if launchd refuses.
+    ///
+    /// It is started as an app of its own (LaunchServices), not as a child
+    /// of ghostgrid: when an app quits, launchd ends every process the app
+    /// started, whether spawned directly, in a new session, or loaded as a
+    /// launchd job through launchctl. An app launched by LaunchServices is
+    /// its own launchd job and keeps running. Spawned directly if that
+    /// fails (it then ends with ghostgrid).
     private static func start() -> Bool {
         let path = executable
         guard FileManager.default.isExecutableFile(atPath: path) else { return false }
         let logs = NSHomeDirectory() + "/Library/Logs/ghostgrid"
         try? FileManager.default.createDirectory(atPath: logs, withIntermediateDirectories: true)
         let log = logs + "/sessiond.log"
-        // A job of the same name that already ended blocks a new submit.
-        _ = launchctl(["remove", jobLabel])
-        if launchctl(["submit", "-l", jobLabel, "-o", log, "-e", log, "--", path, "--socket", socketPath]) {
-            return true
+        removeLegacyJob()
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = false
+        configuration.hides = true
+        configuration.addsToRecentItems = false
+        configuration.createsNewApplicationInstance = false
+        configuration.arguments = ["--socket", socketPath, "--log", log]
+        final class Outcome: @unchecked Sendable { var failed = false }
+        let outcome = Outcome()
+        let semaphore = DispatchSemaphore(value: 0)
+        NSWorkspace.shared.openApplication(at: helperApp, configuration: configuration) { _, error in
+            outcome.failed = error != nil
+            semaphore.signal()
         }
-        return spawn(path, log: log)
+        // Answered on a LaunchServices queue, not main: waiting is safe.
+        if semaphore.wait(timeout: .now() + 5) == .timedOut { return true }
+        return !outcome.failed || spawn(path, log: log)
     }
 
-    private static func launchctl(_ arguments: [String]) -> Bool {
+    /// ghostgrid 0.4 started the helper as a kept-alive launchd job, which
+    /// launchd restarted every time it went idle. Unloaded once found.
+    private static func removeLegacyJob() {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        process.arguments = arguments
+        process.arguments = ["remove", "com.brettbergin.ghostgrid.sessiond.v1"]
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-        } catch {
-            return false
-        }
+        try? process.run()
         process.waitUntilExit()
-        return process.terminationStatus == 0
     }
 
     /// Fallback: in its own session (setsid). It then ends when the app quits.

@@ -36,6 +36,7 @@ enum MainMenu {
             item("Zoom Pane", #selector(AppDelegate.toggleZoom(_:)), "\r", [.command, .shift]),
             item("Command Blocks", #selector(AppDelegate.toggleCommandBlocks(_:)), "b", [.command, .shift]),
             item("Copy Last Command Output", #selector(AppDelegate.copyLastCommandOutput(_:)), "c", [.command, .option, .shift]),
+            item("Explain Last Failure", #selector(AppDelegate.explainLastFailure(_:)), "e", [.command, .shift]),
             .separator(),
             item("Next Pane", #selector(AppDelegate.nextPane(_:)), "]"),
             item("Previous Pane", #selector(AppDelegate.previousPane(_:)), "["),
