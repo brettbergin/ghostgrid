@@ -90,11 +90,28 @@ zsh and bash integration only, so other shells (nushell) run with
 | Cmd+Shift+M           | Make the focused pane the main (first) one |
 | Cmd+Shift+L           | Next layout (Grid, Main + Stack, Columns) |
 | Cmd+Ctrl+=            | Equalize panes (undo divider drags)      |
+| Cmd+Option+I          | Broadcast typing to every pane on/off    |
 | Cmd+N                 | New window                               |
 | Cmd+,                 | ghostgrid Settings                       |
 
 These win over Ghostty keybindings with the same keys; every other key
 goes to the terminal (so Ghostty's own bindings still work).
+
+## Broadcast typing
+
+Shell > Broadcast Input to All Panes (Cmd+Opt+I) sends what you type in the
+focused pane to every other pane of the window as well: run the same
+command on several hosts, or answer the same prompt everywhere. While it is
+on, every pane header turns red and says BROADCAST, pane borders go red,
+and the window title starts with "BROADCAST:". Press Cmd+Opt+I again to
+stop.
+
+- Each pane receives the key events themselves, so every program encodes
+  them for its own mode (arrow keys in vim, Ctrl+C, pastes).
+- Command shortcuts (new pane, close, copy) still act once, on the focused
+  pane. Cmd+V pastes into every pane.
+- Panes still showing their shell menu are skipped.
+- It is per window and never saved: a restored window types into one pane.
 
 ## Pane headers and activity badges
 

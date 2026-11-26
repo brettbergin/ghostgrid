@@ -11,6 +11,43 @@ typealias ControllerProvider = @MainActor (ShellChoice) -> TerminalController
 @MainActor
 final class PaneTerminalView: AppTerminalView {
     var onFocus: (() -> Void)?
+    /// Typing in this terminal, for broadcast to the window's other panes.
+    var onInput: ((MirroredInput) -> Void)?
+
+    /// One piece of typing, replayed as is in another pane so that pane
+    /// encodes it for its own program (cursor-key modes, kitty keyboard).
+    enum MirroredInput {
+        case keyDown(NSEvent), keyUp(NSEvent), modifiers(NSEvent), paste(String)
+    }
+
+    /// Plays typing from the broadcasting pane into this one.
+    func replay(_ input: MirroredInput) {
+        switch input {
+        case let .keyDown(event): super.keyDown(with: event)
+        case let .keyUp(event): super.keyUp(with: event)
+        case let .modifiers(event): super.flagsChanged(with: event)
+        case let .paste(text): paste(text: text)
+        }
+    }
+
+    private func mirrors(_ event: NSEvent) -> Bool {
+        Broadcast.mirrors(command: event.modifierFlags.contains(.command))
+    }
+
+    override func keyUp(with event: NSEvent) {
+        super.keyUp(with: event)
+        if mirrors(event) { onInput?(.keyUp(event)) }
+    }
+
+    override func flagsChanged(with event: NSEvent) {
+        super.flagsChanged(with: event)
+        onInput?(.modifiers(event))
+    }
+
+    override func paste(_ sender: Any?) {
+        super.paste(sender)
+        if let text = NSPasteboard.general.string(forType: .string) { onInput?(.paste(text)) }
+    }
 
     override func becomeFirstResponder() -> Bool {
         let accepted = super.becomeFirstResponder()
@@ -20,6 +57,7 @@ final class PaneTerminalView: AppTerminalView {
 
     override func keyDown(with event: NSEvent) {
         super.keyDown(with: event)
+        if mirrors(event) { onInput?(.keyDown(event)) }
         if GhosttyOptions.shared.mouseHideWhileTyping {
             NSCursor.setHiddenUntilMouseMoves(true)
         }
@@ -77,9 +115,32 @@ final class PaneView: NSView {
     var isDropTarget = false {
         didSet {
             guard isDropTarget != oldValue else { return }
-            animateBorder(to: isDropTarget ? Palette.flash : (isFocusedPane ? Palette.focus : Palette.idle),
-                          width: isDropTarget ? 4 : (isFocusedPane ? 2 : 1))
+            restyleBorder()
         }
+    }
+
+    /// Broadcast typing is on in this pane's window: a red border and
+    /// header, so it is obvious that keys go everywhere.
+    var isBroadcasting = false {
+        didSet {
+            guard isBroadcasting != oldValue else { return }
+            restyleBorder()
+            header?.isBroadcasting = isBroadcasting
+        }
+    }
+
+    /// Typing in this pane while broadcast may be on (GridView decides).
+    var onInput: ((PaneView, PaneTerminalView.MirroredInput) -> Void)?
+
+    /// Replays typing from the broadcasting pane.
+    func replay(_ input: PaneTerminalView.MirroredInput) {
+        terminal?.replay(input)
+    }
+
+    private func restyleBorder() {
+        let color = isDropTarget ? Palette.flash : isBroadcasting ? Palette.failure
+            : isFocusedPane ? Palette.focus : Palette.idle
+        animateBorder(to: color, width: isDropTarget ? 4 : (isFocusedPane || isBroadcasting) ? 2 : 1)
     }
 
     /// The shell reported a new working directory (saved in the session).
@@ -92,8 +153,7 @@ final class PaneView: NSView {
     var isFocusedPane = false {
         didSet {
             guard isFocusedPane != oldValue else { return }
-            animateBorder(to: isFocusedPane ? Palette.focus : Palette.idle,
-                          width: isFocusedPane ? 2 : 1)
+            restyleBorder()
             updateDim(animated: true)
             header?.isFocused = isFocusedPane
             if isFocusedPane { activity = nil }
@@ -231,6 +291,10 @@ final class PaneView: NSView {
         terminal.onFocus = { [weak self] in
             guard let self else { return }
             onFocus?(self)
+        }
+        terminal.onInput = { [weak self] input in
+            guard let self else { return }
+            onInput?(self, input)
         }
         addSubview(terminal, positioned: .below, relativeTo: dimView)
         self.terminal = terminal
@@ -493,6 +557,7 @@ final class PaneView: NSView {
         if wantsHeader, header == nil {
             let view = PaneHeaderView()
             view.isFocused = isFocusedPane
+            view.isBroadcasting = isBroadcasting
             view.onPress = { [weak self] in self?.focus() }
             view.onDrag = { [weak self] phase, point in
                 guard let self else { return }

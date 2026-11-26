@@ -168,6 +168,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     @objc func newPaneChoosingShell(_: Any?) { current?.addPane(chooseShell: true) }
     @objc func closePane(_: Any?) { current?.closeFocused() }
     @objc func toggleZoom(_: Any?) { current?.toggleZoom() }
+    /// Cmd+Opt+I: type into every pane of the window at once.
+    @objc func toggleBroadcast(_: Any?) { current?.broadcasting.toggle() }
     @objc func nextPane(_: Any?) { current?.focusNext(1) }
     @objc func previousPane(_: Any?) { current?.focusNext(-1) }
     @objc func focusLeft(_: Any?) { current?.focus(.left) }
@@ -195,6 +197,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if item.action == #selector(setLayout(_:)) {
             item.state = current?.mode == GridLayout.Mode.allCases[item.tag] ? .on : .off
+        }
+        if item.action == #selector(toggleBroadcast(_:)) {
+            item.state = current?.broadcasting == true ? .on : .off
         }
         return true
     }
