@@ -44,9 +44,9 @@ public enum AttentionGrid {
     /// Weights for panes at `levels` (grid order), or nil when none stands
     /// out: the balanced layout. A track (row, or main/stack) is as large
     /// as its most wanted pane; within a track each pane gets its own.
-    public static func weights(for levels: [AttentionLevel], mode: GridLayout.Mode) -> LayoutWeights? {
+    public static func weights(for levels: [AttentionLevel], mode: GridLayout.Mode, rows: [Int]? = nil) -> LayoutWeights? {
         guard let first = levels.first, levels.contains(where: { $0 != first }) else { return nil }
-        let structure = GridLayout.Structure(count: levels.count, mode: mode)
+        let structure = GridLayout.Structure(count: levels.count, mode: mode, rows: rows)
         var cells: [[Double]] = []
         var index = 0
         for count in structure.cellCounts {

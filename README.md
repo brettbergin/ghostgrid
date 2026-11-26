@@ -86,7 +86,7 @@ zsh and bash integration only, so other shells (nushell) run with
 | Cmd+Shift+Enter       | Zoom pane to fill the window and back    |
 | Cmd+] / Cmd+[         | Next / previous pane                     |
 | Cmd+Option+arrows     | Focus the pane in that direction         |
-| Cmd+Shift+arrows      | Swap the focused pane with that neighbour |
+| Cmd+Shift+arrows      | Swap the focused pane with that neighbour (or move its row) |
 | Cmd+Shift+M           | Make the focused pane the main (first) one |
 | Cmd+Shift+L           | Next layout (Grid, Main + Stack, Columns) |
 | Cmd+Ctrl+=            | Equalize panes (undo divider drags)      |
@@ -254,8 +254,11 @@ pane, or changing the layout, rebalances too; the session keeps your
 adjustments otherwise.
 
 Reorder panes by dragging one by its header onto another (the target
-lights up; they swap) or with Cmd+Shift+arrows. The layout is saved with
-the session; new windows use Settings > Grid > New windows use.
+lights up; they swap) or with Cmd+Shift+arrows. In the grid, moving a pane
+into a row with a different number of panes moves its whole row instead,
+sizes and all: with two panes on top and a long one below, moving the long
+one up puts it, still long, on top and the other two below. The layout is
+saved with the session; new windows use Settings > Grid > New windows use.
 
 ## Attention grid
 
