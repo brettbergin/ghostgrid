@@ -798,7 +798,9 @@ final class PaneView: NSView {
         if focus { window?.makeFirstResponder(panel) }
         let failure = FailedCommand(command: command, output: block.output, exitCode: exitCode,
                                     shell: shell?.name ?? "zsh", directory: workingDirectory)
-        explainTask = LocalModel.explain(failure, update: { [weak self, weak model] explanation in
+        explainTask = LocalModel.explain(failure, thinking: { [weak model] in
+            model?.isThinking = true
+        }, update: { [weak self, weak model] explanation in
             model?.explanation = explanation
             self?.layoutExplainPanel()
         }, finish: { [weak self, weak model] error in

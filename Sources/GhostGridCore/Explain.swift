@@ -133,12 +133,15 @@ public struct Explanation: Equatable, Sendable {
 /// The OpenAI-style streaming chat API that LM Studio serves.
 public enum ChatStream {
     public enum Event: Equatable, Sendable {
-        case content(String), done, ignore, failure(String)
+        case content(String), thinking, done, ignore, failure(String)
     }
 
     private struct Chunk: Decodable {
         struct Choice: Decodable {
-            struct Delta: Decodable { var content: String? }
+            struct Delta: Decodable {
+                var content: String?
+                var reasoning_content: String?
+            }
             var delta: Delta?
         }
 
@@ -154,8 +157,21 @@ public enum ChatStream {
         if payload == "[DONE]" { return .done }
         guard let chunk = try? JSONDecoder().decode(Chunk.self, from: Data(payload.utf8)) else { return .ignore }
         if let error = chunk.error { return .failure(error.message ?? "the model returned an error") }
-        guard let content = chunk.choices?.first?.delta?.content, !content.isEmpty else { return .ignore }
-        return .content(content)
+        let delta = chunk.choices?.first?.delta
+        if let content = delta?.content, !content.isEmpty { return .content(content) }
+        if let thought = delta?.reasoning_content, !thought.isEmpty { return .thinking }
+        return .ignore
+    }
+
+    /// The message in a non-streaming error response, if it has one.
+    public static func serverError(_ body: Data) -> String? {
+        struct Detailed: Decodable {
+            struct Failure: Decodable { var message: String }
+            var error: Failure
+        }
+        struct Plain: Decodable { var error: String }
+        if let detailed = try? JSONDecoder().decode(Detailed.self, from: body) { return detailed.error.message }
+        return (try? JSONDecoder().decode(Plain.self, from: body))?.error
     }
 
     public static func requestBody(model: String, messages: [ChatMessage]) throws -> Data {
@@ -164,8 +180,53 @@ public enum ChatStream {
             var messages: [ChatMessage]
             var stream = true
             var temperature = 0.2
-            var max_tokens = 400
+            /// Thinking off where the server can turn it off (LM Studio does
+            /// for models that declare it; other servers ignore the field).
+            var reasoning_effort = "none"
+            /// Room for a model that thinks anyway to finish and answer.
+            var max_tokens = 4096
         }
         return try JSONEncoder().encode(Body(model: model, messages: messages))
+    }
+}
+
+/// Which model to ask when Settings names none.
+public enum ModelChoice {
+    /// From LM Studio's GET /api/v1/models.
+    /// A loaded chat model, preferring one whose thinking can be turned
+    /// off; nil when none is loaded. Unloaded models are never picked:
+    /// asking for one makes LM Studio try to load it, which can fail or
+    /// take minutes.
+    public static func pick(lmStudio data: Data) -> String? {
+        struct Listing: Decodable {
+            struct Model: Decodable {
+                struct Instance: Decodable { var id: String }
+                struct Capabilities: Decodable {
+                    struct Reasoning: Decodable { var allowed_options: [String]? }
+                    var reasoning: Reasoning?
+                }
+                var type: String
+                var key: String
+                var loaded_instances: [Instance]?
+                var capabilities: Capabilities?
+            }
+            var models: [Model]
+        }
+        guard let listing = try? JSONDecoder().decode(Listing.self, from: data) else { return nil }
+        let loaded = listing.models.filter { $0.type == "llm" && !($0.loaded_instances ?? []).isEmpty }
+        let quick = loaded.first { $0.capabilities?.reasoning?.allowed_options?.contains("off") == true }
+        guard let model = quick ?? loaded.first else { return nil }
+        return model.loaded_instances?.first?.id ?? model.key
+    }
+
+    /// From an OpenAI-style GET /v1/models: the first that is not an
+    /// embedding model.
+    public static func pick(openAI data: Data) -> String? {
+        struct Listing: Decodable {
+            struct Model: Decodable { var id: String }
+            var data: [Model]
+        }
+        guard let listing = try? JSONDecoder().decode(Listing.self, from: data) else { return nil }
+        return listing.data.first { !$0.id.localizedCaseInsensitiveContains("embed") }?.id
     }
 }
