@@ -241,16 +241,13 @@ enum SessionDaemon {
         configuration.addsToRecentItems = false
         configuration.createsNewApplicationInstance = false
         configuration.arguments = ["--socket", socketPath, "--log", log]
-        final class Outcome: @unchecked Sendable { var failed = false }
-        let outcome = Outcome()
-        let semaphore = DispatchSemaphore(value: 0)
+        // Not waited for: connect() polls the socket, which is ready
+        // sooner than LaunchServices answers. Should the launch fail, the
+        // helper is started directly instead.
         NSWorkspace.shared.openApplication(at: helperApp, configuration: configuration) { _, error in
-            outcome.failed = error != nil
-            semaphore.signal()
+            if error != nil { _ = spawn(path, log: log) }
         }
-        // Answered on a LaunchServices queue, not main: waiting is safe.
-        if semaphore.wait(timeout: .now() + 5) == .timedOut { return true }
-        return !outcome.failed || spawn(path, log: log)
+        return true
     }
 
     /// ghostgrid 0.4 started the helper as a kept-alive launchd job, which

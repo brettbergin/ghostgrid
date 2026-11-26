@@ -5,6 +5,7 @@
 // it has no shells and no connections for a while.
 //
 // Usage: ghostgrid-sessiond --socket <path> [--log <path>]
+import AppKit
 import Darwin
 import Foundation
 import GhostGridCore
@@ -367,4 +368,30 @@ for number in [SIGTERM, SIGINT, SIGQUIT] {
     source.resume()
     signalSources.append(source)
 }
-dispatchMain()
+
+/// A background-only app (LSBackgroundOnly) that answers Apple events, as
+/// LaunchServices expects of an app it starts. Without that, opening it
+/// waited for a reply that never came (ghostgrid's panes waited 5 s), and
+/// the Quit that macOS sends it when ghostgrid quits went unanswered, so
+/// it was ended with every shell in it. It declines that Quit and obeys
+/// one for log out, restart or shut down (see HelperQuitPolicy).
+final class HelperApp: NSObject, NSApplicationDelegate {
+    func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
+        let event = NSAppleEventManager.shared().currentAppleEvent
+        let keyword = AEKeyword(HelperQuitPolicy.reasonKeyword)
+        let reason = (event?.attributeDescriptor(forKeyword: keyword) ?? event?.paramDescriptor(forKeyword: keyword))?.typeCodeValue
+        if HelperQuitPolicy.allowsQuit(reason: reason) {
+            log("quitting for log out, restart or shut down: ending \(server.sessions.count) shells")
+            unlink(socketPath)
+            return .terminateNow
+        }
+        log("declined a request to quit (\(server.sessions.count) shells kept)")
+        return .terminateCancel
+    }
+}
+
+let helperApp = HelperApp()
+let application = NSApplication.shared
+application.setActivationPolicy(.prohibited)
+application.delegate = helperApp
+application.run()
