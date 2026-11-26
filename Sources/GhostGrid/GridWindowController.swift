@@ -56,8 +56,15 @@ final class GridWindowController: NSWindowController, NSWindowDelegate {
         window.delegate = self
         window.center()
 
-        grid.onTitleChange = { [weak window] title in
-            window?.title = title.isEmpty ? "ghostgrid" : title
+        grid.onBroadcastChange = { [weak window] on in
+            guard let window else { return }
+            let prefix = "BROADCAST: "
+            let base = window.title.hasPrefix(prefix) ? String(window.title.dropFirst(prefix.count)) : window.title
+            window.title = on ? prefix + base : base
+        }
+        grid.onTitleChange = { [weak window, weak grid] title in
+            let base = title.isEmpty ? "ghostgrid" : title
+            window?.title = grid?.broadcasting == true ? "BROADCAST: " + base : base
         }
         grid.onEmpty = { [weak self] in self?.window?.close() }
     }

@@ -14,6 +14,9 @@ final class PaneHeaderView: NSView {
     let badge = ActivityBadgeView()
 
     var isFocused = false { didSet { restyle() } }
+    /// Broadcast typing is on: the header turns red and says so.
+    var isBroadcasting = false { didSet { restyle() } }
+    private let broadcastLabel = NSTextField(labelWithString: "BROADCAST")
 
     enum DragPhase { case began, moved, ended }
     /// A click on the header (focuses the pane).
@@ -44,7 +47,9 @@ final class PaneHeaderView: NSView {
         let left = NSStackView(views: [shellLabel, pathLabel, branchIcon, branchLabel])
         left.spacing = 6
         left.setCustomSpacing(3, after: branchIcon)
-        let row = NSStackView(views: [left, NSView(), badge])
+        broadcastLabel.font = .monospacedSystemFont(ofSize: 10, weight: .bold)
+        broadcastLabel.textColor = Palette.card
+        let row = NSStackView(views: [left, NSView(), broadcastLabel, badge])
         row.spacing = 8
         row.edgeInsets = NSEdgeInsets(top: 0, left: 10, bottom: 0, right: 8)
         row.translatesAutoresizingMaskIntoConstraints = false
@@ -111,6 +116,14 @@ final class PaneHeaderView: NSView {
     }
 
     private func restyle() {
+        broadcastLabel.isHidden = !isBroadcasting
+        if isBroadcasting {
+            layer?.backgroundColor = Palette.failure.withAlphaComponent(isFocused ? 0.95 : 0.75).cgColor
+            for label in [shellLabel, pathLabel, branchLabel] { label.textColor = Palette.card }
+            branchIcon.contentTintColor = Palette.card
+            return
+        }
+        layer?.backgroundColor = Palette.card.withAlphaComponent(0.85).cgColor
         shellLabel.textColor = isFocused ? Palette.focus : Palette.subtext
         pathLabel.textColor = isFocused ? Palette.text : Palette.subtext
         branchLabel.textColor = Palette.subtext

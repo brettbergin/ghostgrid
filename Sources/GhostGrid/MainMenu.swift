@@ -29,6 +29,8 @@ enum MainMenu {
             .separator(),
             item("Close Pane", #selector(AppDelegate.closePane(_:)), "w"),
             item("Close Window", #selector(NSWindow.performClose(_:)), "w", [.command, .shift]),
+            .separator(),
+            item("Broadcast Input to All Panes", #selector(AppDelegate.toggleBroadcast(_:)), "i", [.command, .option]),
         ]))
         menu.addItem(submenu("Pane", [
             item("Zoom Pane", #selector(AppDelegate.toggleZoom(_:)), "\r", [.command, .shift]),

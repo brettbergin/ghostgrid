@@ -50,6 +50,18 @@ final class GridView: NSView {
     }
 
     var onEmpty: (() -> Void)?
+    /// Broadcast typing on or off (Shell > Broadcast Input).
+    var onBroadcastChange: ((Bool) -> Void)?
+
+    /// Keys typed in the focused pane go to every other pane too. Never
+    /// saved with the session: a restored window types into one pane.
+    var broadcasting = false {
+        didSet {
+            guard broadcasting != oldValue else { return }
+            panes.forEach { $0.isBroadcasting = broadcasting }
+            onBroadcastChange?(broadcasting)
+        }
+    }
     /// Something worth saving changed (panes, focus, zoom, a folder).
     var onChange: (() -> Void)?
     var onTitleChange: ((String) -> Void)?
@@ -141,6 +153,14 @@ final class GridView: NSView {
         pane.onSessionChange = { [weak self] _ in self?.onChange?() }
         pane.onHeaderDrag = { [weak self] pane, phase, point in self?.headerDrag(pane, phase, point) }
         pane.onExit = { [weak self] in self?.remove($0) }
+        pane.isBroadcasting = broadcasting
+        pane.onInput = { [weak self] source, input in
+            guard let self else { return }
+            let targets = Broadcast.targets(
+                from: panes.firstIndex(of: source), running: panes.map { $0.terminal != nil }, enabled: broadcasting,
+            )
+            for index in targets { panes[index].replay(input) }
+        }
     }
 
     // MARK: - Session
