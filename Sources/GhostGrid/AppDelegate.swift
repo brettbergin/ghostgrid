@@ -170,6 +170,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     @objc func toggleZoom(_: Any?) { current?.toggleZoom() }
     /// Cmd+Shift+B: the focused pane's commands, foldable, to copy, rerun or share.
     @objc func toggleCommandBlocks(_: Any?) { current?.focused?.toggleBlocks() }
+    /// Pane > Attention Grid: panes that need you grow (Settings > Grid).
+    @objc func toggleAttentionGrid(_: Any?) { GhostGridSettings.shared.attentionGrid.toggle() }
+
     /// Cmd+Shift+E: why the last failed command failed, from the local model.
     @objc func explainLastFailure(_: Any?) {
         if current?.focused?.explainLastFailure() != true { NSSound.beep() }
@@ -207,6 +210,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if item.action == #selector(setLayout(_:)) {
             item.state = current?.mode == GridLayout.Mode.allCases[item.tag] ? .on : .off
+        }
+        if item.action == #selector(toggleAttentionGrid(_:)) {
+            item.state = GhostGridSettings.shared.attentionGrid ? .on : .off
         }
         if item.action == #selector(toggleBroadcast(_:)) {
             item.state = current?.broadcasting == true ? .on : .off

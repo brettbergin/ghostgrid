@@ -94,6 +94,7 @@ zsh and bash integration only, so other shells (nushell) run with
 | Cmd+Shift+B           | Command blocks of the focused pane       |
 | Cmd+Option+Shift+C    | Copy the last command's output           |
 | Cmd+Shift+E           | Explain the last failure (Return runs the fix) |
+| Cmd+Ctrl+A            | Attention grid on/off                    |
 | Cmd+N                 | New window                               |
 | Cmd+,                 | ghostgrid Settings                       |
 
@@ -254,6 +255,22 @@ adjustments otherwise.
 Reorder panes by dragging one by its header onto another (the target
 lights up; they swap) or with Cmd+Shift+arrows. The layout is saved with
 the session; new windows use Settings > Grid > New windows use.
+
+## Attention grid
+
+The grid leans toward whatever needs you. A pane that is waiting for you
+(a bell, a desktop notification such as an agent asking for input, or a
+command that finished while you looked elsewhere) grows the most; a pane
+printing right now, and the pane you are in, grow a little; a pane with no
+output for 90 seconds shrinks. When nothing stands out the grid stays
+balanced. Changes are gentle: sizes move by small factors on a soft
+0.6 s ease, and only when some pane's state changes.
+
+- A pane stops "needing you" once you focus it.
+- Dragging a divider pauses the attention grid in that window, so your
+  sizes stay; Pane > Equalize Panes (Cmd+Ctrl+=) resumes it.
+- Pane > Attention Grid (Cmd+Ctrl+A), or Settings > Grid, turns it off.
+- The sizes it picks are not saved with the session.
 
 ## Grid
 
