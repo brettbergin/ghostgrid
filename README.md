@@ -25,7 +25,7 @@ The first pane ever, and every Cmd+Shift+T pane, opens with a menu:
 across launches), so Cmd+T and new windows start that shell directly;
 the menu opens with it highlighted. If the remembered shell is no longer
 installed, Cmd+T shows the menu instead. Forget it with
-`defaults delete com.brettbergin.ghostgrid lastShell`.
+**Forget** in Settings (or `defaults delete com.brettbergin.ghostgrid lastShell`).
 Press the number to start that shell at once, or use Up/Down and Return;
 Escape cancels and closes the pane. A shell that is not installed is shown
 dimmed and skipped (nushell is looked for in `/opt/homebrew/bin/nu`,
@@ -60,9 +60,25 @@ zsh and bash integration only, so other shells (nushell) run with
 | Cmd+] / Cmd+[         | Next / previous pane                     |
 | Cmd+Option+arrows     | Focus the pane in that direction         |
 | Cmd+N                 | New window                               |
+| Cmd+,                 | ghostgrid Settings                       |
 
 These win over Ghostty keybindings with the same keys; every other key
 goes to the terminal (so Ghostty's own bindings still work).
+
+## Settings
+
+ghostgrid > Settings... (Cmd+,) holds ghostgrid's own options, saved in
+the app's defaults (`com.brettbergin.ghostgrid`) and applied immediately:
+
+- **Cmd+T opens**: your last shell, or the shell menu every time.
+- **Last shell**: shown, with Forget.
+- **Offer apps after choosing zsh** (the app menu).
+- **Gap between panes**: 0-24 pt.
+- **Animations**: Springy (default), Smooth (no overshoot), or Off.
+- **Ghostty**: the config file in use, whether libghostty is the local
+  build (custom shaders on) or the published one, and Open / Reload.
+
+Everything about how terminals look stays in the Ghostty config.
 
 ## Grid
 
@@ -119,7 +135,7 @@ upgrading libghostty-spm.
 | `mouse-hide-while-typing` | hides the pointer until it moves |
 | `unfocused-split-opacity` | dims unfocused panes |
 | Reload config (Cmd+Shift+,) | re-flattens your files into every shell's instance |
-| Open config (Cmd+,) | opens your config in VS Code (TextEdit otherwise) |
+| Open config | Cmd+Option+, opens your config in VS Code (TextEdit otherwise); Cmd+, is ghostgrid Settings |
 | Full screen (Cmd+Enter, Ctrl+Cmd+F) | menu |
 | Cmd+1...9 | focus pane N (Ghostty: tab N) |
 | Tabs, splits, `new_window` keybinds | ghostgrid's own grid and menu |

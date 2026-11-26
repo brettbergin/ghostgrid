@@ -10,18 +10,20 @@ final class GridView: NSView {
     private(set) weak var focused: PaneView?
     private var zoomed: PaneView?
 
-    let gap: CGFloat = 8
-    /// Grid changes (add, zoom, rebalance): a quick spring that overshoots
-    /// a little and settles. Frames and terminal content share one curve so
-    /// the text stays locked to its box.
-    let springDuration: TimeInterval = 0.46 * GridView.slowdown
-    private let springCurve = CubicBezier(0.32, 1.42, 0.6, 1)
-    private var spring: CAMediaTimingFunction {
-        CAMediaTimingFunction(controlPoints: Float(springCurve.x1), Float(springCurve.y1),
-                              Float(springCurve.x2), Float(springCurve.y2))
+    private var settings: GhostGridSettings { .shared }
+
+    /// Space between panes (Settings > Grid).
+    var gap: CGFloat { CGFloat(settings.gap) }
+    /// Grid changes (add, zoom, rebalance) use the Settings animation style;
+    /// frames and terminal content share one curve so the text stays locked
+    /// to its box. nil: animations off.
+    private var springCurve: CubicBezier? { settings.animation.curve }
+    var springDuration: TimeInterval { settings.animation.duration * GridView.slowdown }
+    private func timing(_ curve: CubicBezier) -> CAMediaTimingFunction {
+        CAMediaTimingFunction(controlPoints: Float(curve.x1), Float(curve.y1), Float(curve.x2), Float(curve.y2))
     }
-    /// Closing: fast start, soft landing, no overshoot.
-    let closeDuration: TimeInterval = 0.22 * GridView.slowdown
+    /// Closing: fast start, soft landing, no overshoot (instant when off).
+    var closeDuration: TimeInterval { settings.animation == .off ? 0 : 0.22 * GridView.slowdown }
 
     /// GHOSTGRID_SLOW_ANIMATIONS=8 plays every animation 8x slower, for tuning.
     static let slowdown: TimeInterval = ProcessInfo.processInfo
@@ -40,6 +42,14 @@ final class GridView: NSView {
     init(controllerFor: @escaping ControllerProvider) {
         self.controllerFor = controllerFor
         super.init(frame: .zero)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(settingsChanged), name: GhostGridSettings.didChange, object: nil,
+        )
+    }
+
+    /// A new gap or animation style applies to open grids right away.
+    @objc private func settingsChanged() {
+        apply(targetFrames(), animated: true)
     }
 
     @available(*, unavailable)
@@ -62,16 +72,17 @@ final class GridView: NSView {
     /// it always shows the menu.
     func addPane(chooseShell: Bool = false) {
         let shells = shells
-        let remembered = ShellCatalog.remembered(ShellMemory.last, in: shells)
+        let remembered = ShellCatalog.remembered(settings.lastShell, in: shells)
+        let startShell = chooseShell || !settings.newPaneUsesLastShell ? nil : remembered
         let pane = PaneView(
             controllerFor: controllerFor,
             workingDirectory: focused?.workingDirectory,
             shells: shells,
-            shell: chooseShell ? nil : remembered,
+            shell: startShell,
             preferred: remembered,
-            offerApps: chooseShell,
+            offerApps: startShell == nil && settings.offerAppsAfterZsh,
         )
-        pane.onShellPicked = { ShellMemory.last = $0.name }
+        pane.onShellPicked = { [settings] in settings.lastShell = $0.name }
         pane.onFocus = { [weak self] in self?.paneDidFocus($0) }
         pane.onTitleChange = { [weak self] pane in
             guard let self, pane === focused else { return }
@@ -183,8 +194,12 @@ final class GridView: NSView {
         return frames
     }
 
-    private func apply(_ frames: [CGRect], animated: Bool) {
+    private func apply(_ frames: [CGRect], animated requested: Bool) {
         guard frames.count == panes.count else { return }
+        // Animations off in Settings: set frames directly. (Going through
+        // animator() would still animate, with AppKit's default duration.)
+        let curve = requested ? springCurve : nil
+        let animated = curve != nil
         let update = {
             for (pane, frame) in zip(self.panes, frames) {
                 let visible = self.zoomed == nil || pane === self.zoomed
@@ -200,18 +215,18 @@ final class GridView: NSView {
             pane.terminal?.setSurfaceVisible(zoomed == nil || pane === zoomed)
         }
 
-        guard animated else {
+        guard let curve else {
             update()
             return
         }
         for (pane, frame) in zip(panes, frames) {
             // Start from what is on screen, in case an animation is running.
             let current = pane.layer?.presentation()?.bounds.size ?? pane.frame.size
-            pane.animateContent(from: current, to: frame.size, duration: springDuration, curve: springCurve)
+            pane.animateContent(from: current, to: frame.size, duration: springDuration, curve: curve)
         }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = springDuration
-            context.timingFunction = spring
+            context.timingFunction = timing(curve)
             context.allowsImplicitAnimation = true
             update()
         }

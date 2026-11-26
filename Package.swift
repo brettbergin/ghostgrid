@@ -28,7 +28,9 @@ let package = Package(
                 "GhostGridCore",
                 .product(name: "GhosttyTerminal", package: "libghostty-spm"),
             ],
-            path: "Sources/GhostGrid"
+            path: "Sources/GhostGrid",
+            // Shown in Settings: which libghostty this build links.
+            swiftSettings: useLocalLibghostty ? [.define("GHOSTGRID_LOCAL_LIBGHOSTTY")] : []
         ),
         .testTarget(
             name: "GhostGridTests",

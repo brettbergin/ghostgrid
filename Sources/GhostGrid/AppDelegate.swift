@@ -75,7 +75,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Cmd+,: open the user's Ghostty config, in VS Code when installed.
+    /// ghostgrid > Settings... (Cmd+,).
+    @objc func showSettings(_: Any?) {
+        SettingsWindowController.shared.present()
+    }
+
+    /// Cmd+Option+,: open the user's Ghostty config, in VS Code when installed.
     @objc func openConfiguration(_: Any?) {
         guard let path = Self.configPath() else { return }
         let url = URL(fileURLWithPath: path)
@@ -138,15 +143,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private static func configPath() -> String? {
-        let fm = FileManager.default
-        if let override = ProcessInfo.processInfo.environment["GHOSTGRID_CONFIG"] {
-            return override
-        }
-        let base = fm.homeDirectoryForCurrentUser.appendingPathComponent(".config/ghostty")
-        for name in ["config.ghostty", "config"] {
-            let path = base.appendingPathComponent(name).path
-            if fm.fileExists(atPath: path) { return path }
-        }
-        return nil
+        GhosttyConfigLocation.path
     }
 }

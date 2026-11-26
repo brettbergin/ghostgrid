@@ -9,8 +9,10 @@ enum MainMenu {
         menu.addItem(submenu("ghostgrid", [
             item("About ghostgrid", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
             .separator(),
-            item("Open Configuration", #selector(AppDelegate.openConfiguration(_:)), ","),
-            item("Reload Configuration", #selector(AppDelegate.reloadConfiguration(_:)), ",", [.command, .shift]),
+            item("Settings...", #selector(AppDelegate.showSettings(_:)), ","),
+            .separator(),
+            item("Open Ghostty Configuration", #selector(AppDelegate.openConfiguration(_:)), ",", [.command, .option]),
+            item("Reload Ghostty Configuration", #selector(AppDelegate.reloadConfiguration(_:)), ",", [.command, .shift]),
             .separator(),
             item("Hide ghostgrid", #selector(NSApplication.hide(_:)), "h"),
             item("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
