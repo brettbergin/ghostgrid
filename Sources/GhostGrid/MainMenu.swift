@@ -9,6 +9,7 @@ enum MainMenu {
         let menu = NSMenu()
         menu.addItem(submenu("ghostgrid", [
             item("About ghostgrid", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
+            item("Check for Updates...", #selector(AppDelegate.checkForUpdates(_:))),
             .separator(),
             item("Settings...", #selector(AppDelegate.showSettings(_:)), ","),
             .separator(),
