@@ -3,7 +3,7 @@ TESTING_PLUGINS := /Library/Developer/CommandLineTools/usr/lib/swift/host/plugin
 # search path; full Xcode does not need this.
 TEST_FLAGS := $(if $(wildcard $(TESTING_PLUGINS)),-Xswiftc -plugin-path -Xswiftc $(TESTING_PLUGINS))
 
-.PHONY: build test app debug run check clean libghostty install uninstall release release-check
+.PHONY: build test app debug run check clean libghostty install uninstall release release-check cask
 
 build:
 	swift build
@@ -47,6 +47,11 @@ release:
 # signing (hardened runtime, entitlements, DMG) without certificates.
 release-check:
 	GHOSTGRID_SIGN_IDENTITY=- Scripts/release.sh
+
+# Points the Homebrew cask (../homebrew-tap) at the published release and
+# commits it there.
+cask:
+	Scripts/update-cask.sh
 
 # Local libghostty with custom shaders (needs Xcode + Zig); see README.
 libghostty:
