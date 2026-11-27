@@ -32,8 +32,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             // A folder opened at launch becomes the first pane.
             let window = makeWindow()
             window.showWindow(nil)
-            window.grid.addPane(directory: folders.first)
-            for folder in folders.dropFirst() { window.grid.addPane(directory: folder) }
+            window.addTab(directory: folders.first)
+            for folder in folders.dropFirst() { window.grid?.addPane(directory: folder) }
         } else {
             for folder in folders { current?.addPane(directory: folder) }
         }
@@ -65,7 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             } else {
                 let window = makeWindow()
                 window.showWindow(nil)
-                window.grid.addPane(directory: folder)
+                window.addTab(directory: folder)
             }
         }
     }
@@ -82,26 +82,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         terminating = true
         saveSession()
         if !GhostGridSettings.shared.keepShellsRunning {
-            windows.forEach { $0.grid.endAllShells() }
+            windows.forEach { $0.endAllShells() }
         }
     }
 
     @objc func newWindow(_: Any?) {
         let window = makeWindow()
         window.showWindow(nil)
-        window.grid.addPane()
+        window.addTab()
     }
 
     private func makeWindow() -> GridWindowController {
         let window = GridWindowController { [unowned self] in controller(for: $0) }
         window.onClose = { [weak self] closed in
             // Closing a window ends its shells; quitting may keep them.
-            if self?.terminating == false { closed.grid.endAllShells() }
+            if self?.terminating == false { closed.endAllShells() }
             self?.windows.removeAll { $0 === closed }
             self?.scheduleSave()
         }
         window.onChange = { [weak self] in self?.scheduleSave() }
-        window.grid.onChange = { [weak self] in self?.scheduleSave() }
         windows.append(window)
         return window
     }
@@ -127,20 +126,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         guard !session.restorable.isEmpty else { return false }
         let screens = NSScreen.screens.map(\.visibleFrame)
         for saved in session.restorable {
-            // A window shows one tab until the tab bar exists: a session
-            // saved with several opens each tab in a window of its own, so
-            // no kept shell is left behind. The selected one opens last, in
-            // front.
-            let selected = saved.selectedTab ?? 0
-            let tabs = saved.tabs.indices.filter { $0 != selected } + [selected]
-            for index in tabs where saved.tabs.indices.contains(index) {
-                let window = makeWindow()
-                if let frame = SessionPolicy.fit(saved.frame, screens: screens) {
-                    window.window?.setFrame(frame, display: false)
-                }
-                window.showWindow(nil)
-                window.grid.restore(saved.tabs[index])
+            let window = makeWindow()
+            if let frame = SessionPolicy.fit(saved.frame, screens: screens) {
+                window.window?.setFrame(frame, display: false)
             }
+            window.showWindow(nil)
+            window.restore(saved)
         }
         return true
     }
@@ -156,11 +147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     private func saveSession() {
-        let saved: [Session.Window] = windows.compactMap { controller in
-            guard let window = controller.window else { return nil }
-            return Session.Window(frame: window.frame, tabs: [controller.grid.snapshot()], selectedTab: 0)
-        }
-        SessionStore.save(Session(windows: saved))
+        SessionStore.save(Session(windows: windows.compactMap { $0.snapshot() }))
     }
 
     // MARK: - Pane commands
@@ -168,11 +155,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     // Handled here rather than on the window so the menu works whatever has
     // focus, and even while the app is in the background.
 
-    private var current: GridView? {
+    /// The front window (or the last one opened).
+    private var currentWindow: GridWindowController? {
         let key = NSApp.keyWindow ?? NSApp.mainWindow
-        return (windows.first { $0.window === key } ?? windows.last)?.grid
+        return windows.first { $0.window === key } ?? windows.last
     }
 
+    /// The grid of the front window's tab in front.
+    private var current: GridView? { currentWindow?.grid }
+
+    /// Cmd+T: a tab with your last shell, in the folder you were in (a new
+    /// window when there is none).
+    @objc func newTab(_: Any?) { openTab(chooseShell: false) }
+    /// Cmd+Shift+T: the same, choosing the shell from the menu.
+    @objc func newTabChoosingShell(_: Any?) { openTab(chooseShell: true) }
+
+    private func openTab(chooseShell: Bool) {
+        if let window = currentWindow {
+            window.addTab(chooseShell: chooseShell)
+        } else {
+            let window = makeWindow()
+            window.showWindow(nil)
+            window.addTab(chooseShell: chooseShell)
+        }
+    }
+
+    /// Cmd+Option+W: the tab in front, with its shells; the last closes the window.
+    @objc func closeTab(_: Any?) {
+        guard let window = currentWindow else { return }
+        window.closeTab(at: window.tabs.selected)
+    }
+
+    @objc func closeOtherTabs(_: Any?) {
+        guard let window = currentWindow else { return }
+        window.closeOtherTabs(keeping: window.tabs.selected)
+    }
+
+    @objc func renameTab(_: Any?) {
+        guard let window = currentWindow else { return }
+        window.beginRename(at: window.tabs.selected)
+    }
+
+    /// Tab > Tab Color (tag: index in TabColor.allCases, -1: none).
+    @objc func setTabColor(_ sender: NSMenuItem) {
+        guard let window = currentWindow else { return }
+        let color = TabColor.allCases.indices.contains(sender.tag) ? TabColor.allCases[sender.tag] : nil
+        window.setColor(color, at: window.tabs.selected)
+    }
+
+    @objc func nextTab(_: Any?) { currentWindow?.selectNext(1) }
+    @objc func previousTab(_: Any?) { currentWindow?.selectNext(-1) }
+    /// Cmd+1...9: that tab (tag: the number; 9 is the last tab).
+    @objc func selectTabNumber(_ sender: NSMenuItem) { currentWindow?.select(number: sender.tag) }
+
+    /// Cmd+D: a pane in the tab in front.
     @objc func newPane(_: Any?) { current?.addPane() }
     @objc func newPaneChoosingShell(_: Any?) { current?.addPane(chooseShell: true) }
     @objc func closePane(_: Any?) { current?.closeFocused() }
@@ -190,7 +226,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     @objc func copyLastCommandOutput(_: Any?) {
         if current?.focused?.copyLastOutput() != true { NSSound.beep() }
     }
-    /// Cmd+Opt+I: type into every pane of the window at once.
+    /// Cmd+Opt+I: type into every pane of the tab at once.
     @objc func toggleBroadcast(_: Any?) { current?.broadcasting.toggle() }
     @objc func nextPane(_: Any?) { current?.focusNext(1) }
     @objc func previousPane(_: Any?) { current?.focusNext(-1) }
@@ -236,11 +272,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         if item.action == #selector(toggleBroadcast(_:)) {
             item.state = current?.broadcasting == true ? .on : .off
         }
+        if item.action == #selector(setTabColor(_:)) {
+            let color = currentWindow?.selectedColor
+            item.state = (color.flatMap { TabColor.allCases.firstIndex(of: $0) } ?? -1) == item.tag ? .on : .off
+        }
+        if item.action == #selector(closeOtherTabs(_:)) || item.action == #selector(nextTab(_:))
+            || item.action == #selector(previousTab(_:)) {
+            return (currentWindow?.tabs.count ?? 0) > 1
+        }
         return true
     }
 
-    /// Cmd+1...9: the pane at that position (menu item tag, 0-based).
-    @objc func focusPaneNumber(_ sender: NSMenuItem) { current?.focusPane(at: sender.tag) }
+    /// Cmd+Option+1...9: the pane at that position in the tab in front
+    /// (menu item tag: the number).
+    @objc func focusPaneNumber(_ sender: NSMenuItem) { current?.focusPane(at: sender.tag - 1) }
 
     // MARK: - Configuration
 
@@ -306,13 +351,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
     }
 
-    /// Writes ~/Library/Application Support/ghostgrid/config-<name>.ghostty.
+    /// Writes <support directory>/config-<name>.ghostty.
     private static func writeConfig(_ contents: String?, name: String) -> String? {
         guard let contents else { return nil }
         do {
-            let dir = try FileManager.default.url(
-                for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true,
-            ).appendingPathComponent("ghostgrid", isDirectory: true)
+            guard let dir = SupportDirectory.url else { throw CocoaError(.fileNoSuchFile) }
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let output = dir.appendingPathComponent("config-\(name).ghostty")
             try contents.write(to: output, atomically: true, encoding: .utf8)
@@ -332,13 +375,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 }
 
-/// ~/Library/Application Support/ghostgrid/session.json
+/// <support directory>/session.json
 @MainActor
 enum SessionStore {
     static var url: URL? {
-        try? FileManager.default.url(
-            for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true,
-        ).appendingPathComponent("ghostgrid/session.json")
+        SupportDirectory.url?.appendingPathComponent("session.json")
     }
 
     static func load() -> Session? {

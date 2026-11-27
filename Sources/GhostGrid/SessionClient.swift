@@ -144,14 +144,28 @@ extension SessionClient {
     }
 }
 
+/// Where ghostgrid keeps its files (session, kept shells' socket, configs,
+/// hooks): ~/Library/Application Support/ghostgrid. GHOSTGRID_SUPPORT_DIR
+/// points a development copy elsewhere, so it can run beside the installed
+/// app without touching its session or shells.
+enum SupportDirectory {
+    static let override: String? = ProcessInfo.processInfo.environment["GHOSTGRID_SUPPORT_DIR"]
+        .flatMap { $0.isEmpty ? nil : $0 }
+
+    static var url: URL? {
+        if let override { return URL(fileURLWithPath: override, isDirectory: true) }
+        return try? FileManager.default.url(
+            for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true,
+        ).appendingPathComponent("ghostgrid", isDirectory: true)
+    }
+}
+
 /// ghostgrid's shell hook files (ShellHooks), written once per launch to
-/// ~/Library/Application Support/ghostgrid/hooks; nil if that failed.
+/// <support directory>/hooks; nil if that failed.
 enum HookFiles {
     static let directory: String? = {
-        guard let base = try? FileManager.default.url(
-            for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true,
-        ) else { return nil }
-        let path = base.appendingPathComponent("ghostgrid/hooks", isDirectory: true).path
+        guard let base = SupportDirectory.url else { return nil }
+        let path = base.appendingPathComponent("hooks", isDirectory: true).path
         do {
             try ShellHooks.install(in: path)
             return path
@@ -166,9 +180,7 @@ enum SessionDaemon {
     /// One socket per protocol version, so an app update never talks to an
     /// older helper it cannot understand; the older one keeps its shells.
     static var socketPath: String {
-        let base = (try? FileManager.default.url(
-            for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true,
-        ).appendingPathComponent("ghostgrid", isDirectory: true).path) ?? NSTemporaryDirectory()
+        let base = SupportDirectory.url?.path ?? NSTemporaryDirectory()
         try? FileManager.default.createDirectory(atPath: base, withIntermediateDirectories: true,
                                                  attributes: [.posixPermissions: 0o700])
         return base + "/sessiond-v\(SessionMessage.protocolVersion).sock"
@@ -231,9 +243,13 @@ enum SessionDaemon {
     private static func start() -> Bool {
         let path = executable
         guard FileManager.default.isExecutableFile(atPath: path) else { return false }
-        let logs = NSHomeDirectory() + "/Library/Logs/ghostgrid"
+        let logs = SupportDirectory.override ?? NSHomeDirectory() + "/Library/Logs/ghostgrid"
         try? FileManager.default.createDirectory(atPath: logs, withIntermediateDirectories: true)
         let log = logs + "/sessiond.log"
+        // A development copy (GHOSTGRID_SUPPORT_DIR) runs its own helper as
+        // its child: LaunchServices would hand the launch to the installed
+        // app's helper, which is already running.
+        if SupportDirectory.override != nil { return spawn(path, log: log) }
         removeLegacyJob()
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = false
