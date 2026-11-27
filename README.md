@@ -8,6 +8,17 @@ opacity and shaders match your Ghostty.
 
 ## Install
 
+With Homebrew (signed and notarized; Apple silicon, macOS 14+):
+
+```bash
+brew install --cask brettbergin/tap/ghostgrid
+```
+
+The cask installs the app only; `gg` comes with `make install`. Or download
+the DMG from the [releases](https://github.com/brettbergin/ghostgrid/releases).
+
+From source:
+
 ```bash
 make install   # release build -> /Applications/ghostgrid.app, gg -> ~/.local/bin/gg
 gg             # a pane in the current folder (launches ghostgrid if needed)
@@ -69,6 +80,11 @@ One-time setup:
    ```
 
 3. Ghostty in `/Applications` (its themes are bundled, see `bundle.sh`).
+
+After publishing a release, `make cask` points the Homebrew cask in
+`../homebrew-tap` (a checkout of brettbergin/homebrew-tap, or
+`GHOSTGRID_TAP`) at it: it checks the published DMG is this build, sets the
+version and SHA-256, and commits there for you to push.
 
 `make release-check` runs the same packaging signed ad hoc and not
 notarized, to check it without certificates. Release builds carry
