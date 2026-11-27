@@ -47,6 +47,29 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<!-- Programs run in a pane ask macOS through ghostgrid (and through
+	     ghostgrid-sessiond, which gets these too; see bundle.sh). Paired
+	     with Resources/ghostgrid.entitlements for release builds. -->
+	<key>NSAppleEventsUsageDescription</key>
+	<string>A program running in ghostgrid wants to control another app.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>A program running in ghostgrid wants to use the microphone.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>A program running in ghostgrid wants to use the camera.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>A program running in ghostgrid wants to read your contacts.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>A program running in ghostgrid wants to read your calendars.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>A program running in ghostgrid wants to read your calendars.</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>A program running in ghostgrid wants to read your reminders.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>A program running in ghostgrid wants to read your reminders.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>A program running in ghostgrid wants to know your location.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>A program running in ghostgrid wants to read your photos.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

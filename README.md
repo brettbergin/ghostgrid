@@ -31,6 +31,7 @@ make run     # debug build, assemble build/ghostgrid.app, open it
 make app     # release build of build/ghostgrid.app
 make test    # unit tests (core module: layouts, config, shells, sessions, ...)
 make check   # tests + release app + shellcheck
+make release # signed, notarized DMG for other Macs (see Releases)
 ```
 
 ## CI
@@ -39,6 +40,43 @@ berg-runner (`.berg-runner/ci.yaml`): the `core` job builds the AppKit-free
 `GhostGridCore` module and runs its tests in a Linux Swift container (the
 app target exists only on macOS, see `Package.swift`). The app itself is
 checked by `make check` on a Mac until there is a Mac CI agent.
+
+## Releases
+
+`make release` builds `build/release/ghostgrid-<version>.dmg` for other
+Macs: signed with your Developer ID and the hardened runtime, notarized by
+Apple and stapled (the app inside too, so it opens offline once copied
+out), with a `.sha256` beside it. It is built from what is committed and
+takes a few minutes, most of it waiting on Apple. The version is
+`CFBundleShortVersionString` in `Resources/Info.plist` (or
+`GHOSTGRID_VERSION`); the build number is the commit count.
+
+ghostgrid is not in the Mac App Store and cannot be: the store requires the
+App Sandbox, and a sandboxed terminal's shells could not see your files or
+run your tools. Developer ID with notarization is how terminals ship.
+
+One-time setup:
+
+1. A **Developer ID Application** certificate in your login keychain:
+   developer.apple.com > Certificates, Identifiers & Profiles >
+   Certificates > + > Developer ID Application (or Xcode > Settings >
+   Accounts > Manage Certificates > + > Developer ID Application).
+2. Notarization credentials saved in the keychain as `ghostgrid-notary`,
+   with an app-specific password made at account.apple.com:
+
+   ```bash
+   xcrun notarytool store-credentials ghostgrid-notary --apple-id <apple id> --team-id <team id>
+   ```
+
+3. Ghostty in `/Applications` (its themes are bundled, see `bundle.sh`).
+
+`make release-check` runs the same packaging signed ad hoc and not
+notarized, to check it without certificates. Release builds carry
+`Resources/ghostgrid.entitlements`: no sandbox, but the permissions that
+let programs in a pane ask for the microphone, camera, contacts and so on,
+as Ghostty does. Publish with
+`gh release create v<version> build/release/ghostgrid-<version>.dmg*`
+(CI runs on Linux and cannot sign).
 
 ## Picking a shell
 

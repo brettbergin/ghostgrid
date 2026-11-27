@@ -42,6 +42,11 @@ cat >"$HELPER/Contents/Info.plist" <<'PLIST'
 </dict>
 </plist>
 PLIST
+# The helper is the parent of kept shells, so programs in them ask macOS
+# through it: it needs the app's usage descriptions too.
+for key in $(plutil -convert xml1 -o - Resources/Info.plist | sed -n 's|.*<key>\(NS[A-Za-z]*UsageDescription\)</key>.*|\1|p'); do
+  plutil -insert "$key" -string "$(plutil -extract "$key" raw Resources/Info.plist)" "$HELPER/Contents/Info.plist"
+done
 # SwiftPM resource bundles (GhosttyTerminal's shell integration, terminfo).
 # The package looks for them in Contents/Resources.
 cp -R "$BIN"/*.bundle "$APP/Contents/Resources/"
