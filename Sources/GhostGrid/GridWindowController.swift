@@ -53,8 +53,6 @@ final class GridWindowController: NSWindowController, NSWindowDelegate {
     private var barLeading: NSLayoutConstraint!
     /// A tab is being renamed: the bar stays visible meanwhile.
     private var renaming = false
-    /// The bar's height in full screen, where there is no titlebar to sit in.
-    private let fullScreenBarHeight: CGFloat = 30
 
     var onClose: ((GridWindowController) -> Void)?
     /// The window, its tabs or a grid changed in a way worth saving.
@@ -298,17 +296,15 @@ final class GridWindowController: NSWindowController, NSWindowDelegate {
         tabBar.isHidden = !visible
         // The title would sit under the tabs.
         window.titleVisibility = visible ? .hidden : .visible
-        let titlebar = window.frame.height - window.contentLayoutRect.height
-        if titlebar > 0 {
-            barHeight.constant = titlebar
-            gridTop.constant = 0
-            let buttons = window.standardWindowButton(.zoomButton)?.frame.maxX ?? 68
-            barLeading.constant = buttons + 12
-        } else {
-            barHeight.constant = fullScreenBarHeight
-            gridTop.constant = visible ? fullScreenBarHeight : 0
-            barLeading.constant = 8
-        }
+        let placed = TabBarPlacement.place(
+            fullScreen: window.styleMask.contains(.fullScreen) || enteringFullScreen,
+            titlebarHeight: window.frame.height - window.contentLayoutRect.height,
+            buttonsMaxX: window.standardWindowButton(.zoomButton)?.frame.maxX ?? 68,
+            visible: visible,
+        )
+        barHeight.constant = placed.barHeight
+        gridTop.constant = placed.gridTop
+        barLeading.constant = placed.leading
     }
 
     private func updateTitle() {
@@ -349,7 +345,25 @@ final class GridWindowController: NSWindowController, NSWindowDelegate {
 
     func windowDidMove(_: Notification) { onChange?() }
     func windowDidResize(_: Notification) { onChange?() }
-    func windowDidEnterFullScreen(_: Notification) { updateChrome() }
+    /// Set from the moment full screen is requested, so the bar is already
+    /// in place while the window animates into it.
+    private var enteringFullScreen = false
+
+    func windowWillEnterFullScreen(_: Notification) {
+        enteringFullScreen = true
+        updateChrome()
+    }
+
+    func windowDidEnterFullScreen(_: Notification) {
+        enteringFullScreen = false
+        updateChrome()
+    }
+
+    func windowDidFailToEnterFullScreen(_: NSWindow) {
+        enteringFullScreen = false
+        updateChrome()
+    }
+
     func windowDidExitFullScreen(_: Notification) { updateChrome() }
 
     func windowWillClose(_: Notification) {

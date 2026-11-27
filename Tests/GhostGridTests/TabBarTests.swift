@@ -140,3 +140,26 @@ struct TabActivitySinceTests {
         #expect(TabActivity.badge(for: panes, since: nil) == failed, "never looked at: everything counts")
     }
 }
+
+/// Contract for where the tab bar sits: in a window, in the titlebar beside
+/// the traffic lights, the panes where they always were; in full screen
+/// (no titlebar to sit in, even when the window still reports its height),
+/// above the panes, which move down to make room only while it shows.
+struct TabBarPlacementTests {
+    @Test func inAWindowTheBarFillsTheTitlebar() {
+        let placed = TabBarPlacement.place(fullScreen: false, titlebarHeight: 28, buttonsMaxX: 68, visible: true)
+        #expect(placed == TabBarPlacement(barHeight: 28, gridTop: 0, leading: 80))
+    }
+
+    @Test func inFullScreenTheBarSitsAboveThePanes() {
+        for titlebar in [0.0, 28.0] {
+            let placed = TabBarPlacement.place(fullScreen: true, titlebarHeight: titlebar, buttonsMaxX: 68, visible: true)
+            #expect(placed == TabBarPlacement(barHeight: 30, gridTop: 30, leading: 8), "titlebar \(titlebar)")
+        }
+    }
+
+    @Test func inFullScreenAHiddenBarTakesNoRoom() {
+        let placed = TabBarPlacement.place(fullScreen: true, titlebarHeight: 28, buttonsMaxX: 68, visible: false)
+        #expect(placed.gridTop == 0)
+    }
+}

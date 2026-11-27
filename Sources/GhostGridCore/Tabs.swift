@@ -195,3 +195,31 @@ extension TabActivity {
         })
     }
 }
+
+/// Where the tab bar sits. In a window: in the titlebar beside the
+/// traffic lights, with the panes where they always were. In full screen
+/// there is no titlebar to sit in (the window may still report its height),
+/// so the bar goes above the panes, which move down for it only while it
+/// shows.
+public struct TabBarPlacement: Equatable, Sendable {
+    public var barHeight: CGFloat
+    /// How far below the top of the safe area the panes start.
+    public var gridTop: CGFloat
+    /// The bar's left edge, from the window's.
+    public var leading: CGFloat
+
+    public static let fullScreenHeight: CGFloat = 30
+
+    public init(barHeight: CGFloat, gridTop: CGFloat, leading: CGFloat) {
+        self.barHeight = barHeight
+        self.gridTop = gridTop
+        self.leading = leading
+    }
+
+    public static func place(fullScreen: Bool, titlebarHeight: CGFloat, buttonsMaxX: CGFloat, visible: Bool) -> TabBarPlacement {
+        if !fullScreen, titlebarHeight > 0 {
+            return TabBarPlacement(barHeight: titlebarHeight, gridTop: 0, leading: buttonsMaxX + 12)
+        }
+        return TabBarPlacement(barHeight: fullScreenHeight, gridTop: visible ? fullScreenHeight : 0, leading: 8)
+    }
+}
