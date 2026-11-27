@@ -54,10 +54,12 @@ make release # signed, notarized DMG for other Macs (see Releases)
 
 ## CI
 
-`.berg-runner/ci.yaml` defines one job, `core`: it builds the AppKit-free
-`GhostGridCore` module and runs its tests in a Linux Swift container (the
-app target exists only on macOS, see `Package.swift`). The app itself is
-checked by `make check` on a Mac, and releases are built there.
+GitHub Actions (`.github/workflows/ci.yml`) runs `make check` on macOS for
+every pull request and push to main: the tests, the app bundle, and
+shellcheck. `.berg-runner/ci.yaml` defines one more job, `core`, for pushes
+to main: it builds the AppKit-free `GhostGridCore` module and runs its tests
+in a Linux Swift container (the app target exists only on macOS, see
+`Package.swift`). Releases are built on a Mac with `make release`.
 
 ## Releases
 
