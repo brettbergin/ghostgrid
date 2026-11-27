@@ -52,13 +52,16 @@ public enum GridLayout {
     /// `rows`: the grid's panes per row, top to bottom, after rows were
     /// moved (see ``move(_:onto:count:mode:rows:weights:)``); nil, or a
     /// shape that does not fit: the balanced one, short row last.
+    /// `rotated`: Rotate Layout, the split the window's shape would pick,
+    /// turned (stacked in a wide window, side by side in a tall one).
     public static func frames(
         count: Int, in bounds: CGRect, gap: CGFloat, mode: Mode, weights: LayoutWeights?, rows: [Int]? = nil,
+        rotated: Bool = false,
     ) -> [CGRect] {
         guard count > 0, bounds.width > 0, bounds.height > 0 else { return [] }
         let structure = Structure(count: count, mode: mode, rows: rows)
         let (tracks, cells) = structure.resolve(weights)
-        return oriented(bounds) { space in
+        return oriented(bounds, rotated: rotated) { space in
             structure.frames(in: space, gap: gap, tracks: tracks, cells: cells)
         }
     }
@@ -68,12 +71,12 @@ public enum GridLayout {
     /// gap, at least `minimumThickness` wide so it can be grabbed with no gap.
     public static func splitters(
         count: Int, in bounds: CGRect, gap: CGFloat, mode: Mode, weights: LayoutWeights?, rows: [Int]? = nil,
-        minimumThickness: CGFloat = 8,
+        rotated: Bool = false, minimumThickness: CGFloat = 8,
     ) -> [Splitter] {
         guard count > 1, bounds.width > 0, bounds.height > 0 else { return [] }
         let structure = Structure(count: count, mode: mode, rows: rows)
         let (tracks, cells) = structure.resolve(weights)
-        let tall = bounds.height > bounds.width
+        let tall = isTall(bounds, rotated: rotated)
         let space = tall ? transposed(bounds) : bounds
         let wide = structure.splitters(in: space, gap: gap, tracks: tracks, cells: cells, thickness: max(gap, minimumThickness))
         return tall ? wide.map { Splitter(kind: $0.kind, rect: transposed($0.rect)) } : wide
@@ -85,11 +88,11 @@ public enum GridLayout {
     /// `minimum` points.
     public static func drag(
         _ kind: Splitter.Kind, by delta: CGFloat, count: Int, in bounds: CGRect, gap: CGFloat,
-        mode: Mode, weights: LayoutWeights?, rows: [Int]? = nil, minimum: CGFloat,
+        mode: Mode, weights: LayoutWeights?, rows: [Int]? = nil, rotated: Bool = false, minimum: CGFloat,
     ) -> LayoutWeights {
         let structure = Structure(count: count, mode: mode, rows: rows)
         var (tracks, cells) = structure.resolve(weights)
-        let tall = bounds.height > bounds.width
+        let tall = isTall(bounds, rotated: rotated)
         let space = tall ? transposed(bounds) : bounds
         let trackExtent = structure.trackExtent(in: space, gap: gap)
         switch kind {
@@ -131,9 +134,15 @@ public enum GridLayout {
         CGRect(x: rect.minY, y: rect.minX, width: rect.height, height: rect.width)
     }
 
+    /// Whether to lay out as in a tall window: a tall window, unless
+    /// rotated (Rotate Layout turns the split the shape would pick).
+    private static func isTall(_ bounds: CGRect, rotated: Bool) -> Bool {
+        (bounds.height > bounds.width) != rotated
+    }
+
     /// Lays out in a "wide" space and swaps the axes back for tall windows.
-    private static func oriented(_ bounds: CGRect, _ layout: (CGRect) -> [CGRect]) -> [CGRect] {
-        guard bounds.height > bounds.width else { return layout(bounds) }
+    private static func oriented(_ bounds: CGRect, rotated: Bool, _ layout: (CGRect) -> [CGRect]) -> [CGRect] {
+        guard isTall(bounds, rotated: rotated) else { return layout(bounds) }
         return layout(transposed(bounds)).map(transposed)
     }
 

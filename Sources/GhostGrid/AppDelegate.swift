@@ -148,7 +148,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             let grid = controller.grid.snapshot()
             return Session.Window(
                 frame: window.frame, panes: grid.panes, focused: grid.focused, zoomed: grid.zoomed, layout: grid.layout,
-                weights: grid.weights, rows: grid.rows,
+                weights: grid.weights, rows: grid.rows, rotated: grid.rotated ? true : nil,
             )
         }
         SessionStore.save(Session(windows: saved))
@@ -201,6 +201,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         current?.setMode(GridLayout.Mode.allCases[sender.tag])
     }
 
+    @objc func rotateLayout(_: Any?) { current?.toggleRotation() }
+
     @objc func cycleLayout(_: Any?) {
         guard let grid = current else { return }
         grid.setMode(grid.mode.next)
@@ -213,6 +215,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
         if item.action == #selector(toggleAttentionGrid(_:)) {
             item.state = GhostGridSettings.shared.attentionGrid ? .on : .off
+        }
+        if item.action == #selector(rotateLayout(_:)) {
+            item.state = current?.rotated == true ? .on : .off
         }
         if item.action == #selector(toggleBroadcast(_:)) {
             item.state = current?.broadcasting == true ? .on : .off

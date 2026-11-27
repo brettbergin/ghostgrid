@@ -87,6 +87,7 @@ zsh and bash integration only, so other shells (nushell) run with
 | Cmd+] / Cmd+[         | Next / previous pane                     |
 | Cmd+Option+arrows     | Focus the pane in that direction         |
 | Cmd+Shift+arrows      | Swap the focused pane with that neighbour (or move its row) |
+| Cmd+Ctrl+R            | Rotate Layout: stack panes in a wide window (side by side in a tall one) |
 | Cmd+Shift+M           | Make the focused pane the main (first) one |
 | Cmd+Shift+L           | Next layout (Grid, Main + Stack, Columns) |
 | Cmd+Ctrl+=            | Equalize panes (undo divider drags)      |
@@ -252,6 +253,13 @@ between panes in a row, between the main pane and the stack in Main + Stack
 use Pane > Equalize Panes (Cmd+Ctrl+=) to rebalance. Adding or removing a
 pane, or changing the layout, rebalances too; the session keeps your
 adjustments otherwise.
+
+A window's shape picks the split: side by side when it is wider than tall,
+stacked when it is taller. Pane > Rotate Layout (Cmd+Ctrl+R) turns that for
+the window, in every layout (two panes one above the other in a wide
+window, the main pane across the top, Columns as rows); press it again to
+turn back. It is saved with the session and kept when panes or the layout
+change.
 
 Reorder panes by dragging one by its header onto another (the target
 lights up; they swap) or with Cmd+Shift+arrows. In the grid, moving a pane

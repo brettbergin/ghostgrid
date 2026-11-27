@@ -19,6 +19,9 @@ final class GridView: NSView {
     /// the weights, it goes back to balanced when the pane count or mode
     /// changes.
     private(set) var rows: [Int]?
+    /// Rotate Layout: the split the window's shape would pick, turned.
+    /// Kept across pane changes and layout modes.
+    private(set) var rotated = false
     /// The weights come from the attention grid, not from a drag (so they
     /// are not saved with the session).
     private var weightsFromAttention = false
@@ -223,6 +226,7 @@ final class GridView: NSView {
     /// pane still showing its menu is skipped), with focus and zoom.
     func snapshot() -> (
         panes: [Session.Pane], focused: Int?, zoomed: Int?, layout: GridLayout.Mode, weights: LayoutWeights?, rows: [Int]?,
+        rotated: Bool,
     ) {
         var saved: [Session.Pane] = []
         var focusedIndex: Int?
@@ -238,7 +242,7 @@ final class GridView: NSView {
         // menu is not saved, so they would not fit.
         let complete = saved.count == panes.count
         let kept = complete && !weightsFromAttention ? weights : nil
-        return (saved, focusedIndex, zoomedIndex, mode, kept, complete ? rows : nil)
+        return (saved, focusedIndex, zoomedIndex, mode, kept, complete ? rows : nil, rotated)
     }
 
     /// Rebuilds a saved window's panes, without animation. A saved shell
@@ -263,6 +267,7 @@ final class GridView: NSView {
         mode = window.layout ?? .grid
         weights = window.weights
         rows = window.rows
+        rotated = window.rotated ?? false
         apply(targetFrames(), animated: false)
         (window.focused.map { panes[$0] } ?? panes.last)?.focus()
     }
@@ -315,7 +320,7 @@ final class GridView: NSView {
 
     func focus(_ direction: GridLayout.Direction) {
         guard zoomed == nil, let focused, let index = panes.firstIndex(of: focused) else { return }
-        let frames = GridLayout.frames(count: panes.count, in: bounds, gap: gap, mode: mode, weights: weights, rows: rows)
+        let frames = GridLayout.frames(count: panes.count, in: bounds, gap: gap, mode: mode, weights: weights, rows: rows, rotated: rotated)
         if let next = GridLayout.neighbor(of: index, in: frames, direction: direction) {
             panes[next].focus()
         }
@@ -346,7 +351,7 @@ final class GridView: NSView {
     /// focus moves with the pane.
     func swapFocused(_ direction: GridLayout.Direction) {
         guard zoomed == nil, let focused, let index = panes.firstIndex(of: focused) else { return }
-        let frames = GridLayout.frames(count: panes.count, in: bounds, gap: gap, mode: mode, weights: weights, rows: rows)
+        let frames = GridLayout.frames(count: panes.count, in: bounds, gap: gap, mode: mode, weights: weights, rows: rows, rotated: rotated)
         guard let other = GridLayout.neighbor(of: index, in: frames, direction: direction) else { return }
         movePane(index, onto: other)
     }
@@ -377,6 +382,15 @@ final class GridView: NSView {
         panes = move.order.map { panes[$0] }
         rows = move.rows
         weights = move.weights
+        apply(targetFrames(), animated: true)
+        focused?.focus()
+        onChange?()
+    }
+
+    /// Pane > Rotate Layout (Cmd+Ctrl+R): stack the panes in a wide window
+    /// (side by side in a tall one), or back.
+    func toggleRotation() {
+        rotated.toggle()
         apply(targetFrames(), animated: true)
         focused?.focus()
         onChange?()
@@ -450,7 +464,7 @@ final class GridView: NSView {
 
     private var splitters: [Splitter] {
         guard zoomed == nil, dragging == nil else { return [] }
-        return GridLayout.splitters(count: panes.count, in: bounds, gap: gap, mode: mode, weights: weights, rows: rows)
+        return GridLayout.splitters(count: panes.count, in: bounds, gap: gap, mode: mode, weights: weights, rows: rows, rotated: rotated)
     }
 
     private func splitter(at point: NSPoint) -> Splitter? {
@@ -490,7 +504,7 @@ final class GridView: NSView {
         let delta = resizing.vertical ? point.x - resizing.start.x : point.y - resizing.start.y
         weights = GridLayout.drag(
             resizing.kind, by: delta, count: panes.count, in: bounds, gap: gap, mode: mode,
-            weights: resizing.weights, rows: rows, minimum: minimumPaneSize,
+            weights: resizing.weights, rows: rows, rotated: rotated, minimum: minimumPaneSize,
         )
         apply(targetFrames(), animated: false)
     }
@@ -514,7 +528,7 @@ final class GridView: NSView {
     // MARK: - Layout
 
     private func targetFrames() -> [CGRect] {
-        let grid = GridLayout.frames(count: panes.count, in: bounds, gap: gap, mode: mode, weights: weights, rows: rows)
+        let grid = GridLayout.frames(count: panes.count, in: bounds, gap: gap, mode: mode, weights: weights, rows: rows, rotated: rotated)
         guard let zoomed, let zoomIndex = panes.firstIndex(of: zoomed) else { return grid }
         // A zoomed pane takes the whole window; the rest keep their cells.
         var frames = grid

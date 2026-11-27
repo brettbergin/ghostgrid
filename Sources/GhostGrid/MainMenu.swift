@@ -56,6 +56,7 @@ enum MainMenu {
             .separator(),
             layoutMenu(),
             item("Next Layout", #selector(AppDelegate.cycleLayout(_:)), "l", [.command, .shift]),
+            item("Rotate Layout", #selector(AppDelegate.rotateLayout(_:)), "r", [.command, .control]),
         ] + paneNumberItems()))
         let window = submenu("Window", [
             item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"),
