@@ -41,6 +41,9 @@ let coreTargets: [Target] = [
         useLocalLibghostty
             ? .package(path: localLibghostty)
             : .package(url: "https://github.com/Lakr233/libghostty-spm.git", exact: "2.2.2026112401"),
+        // In-app updates (ghostgrid > Check for Updates...). bundle.sh copies
+        // the framework into the app; release.sh signs it.
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.1"),
     ]
     let appTargets: [Target] = [
         // Owns every pane's shell so shells outlive the app (shells that
@@ -59,10 +62,13 @@ let coreTargets: [Target] = [
             dependencies: [
                 "GhostGridCore",
                 .product(name: "GhosttyTerminal", package: "libghostty-spm"),
+                .product(name: "Sparkle", package: "Sparkle"),
             ],
             path: "Sources/GhostGrid",
             // Shown in Settings: which libghostty this build links.
-            swiftSettings: useLocalLibghostty ? [.define("GHOSTGRID_LOCAL_LIBGHOSTTY")] : []
+            swiftSettings: useLocalLibghostty ? [.define("GHOSTGRID_LOCAL_LIBGHOSTTY")] : [],
+            // Sparkle.framework is in the app's Contents/Frameworks (bundle.sh).
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
         ),
     ]
 #else

@@ -1,6 +1,7 @@
 import AppKit
 import GhostGridCore
 import GhosttyTerminal
+import Sparkle
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
@@ -16,6 +17,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// panes once the windows exist.
     private var pendingFolders: [String] = []
     private var launched = false
+    /// In-app updates from the latest release's appcast (Info.plist:
+    /// SUFeedURL, SUPublicEDKey): a check a day, and ghostgrid > Check for
+    /// Updates. Shells survive the relaunch (ghostgrid-sessiond keeps them).
+    private let updater = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
 
     func applicationDidFinishLaunching(_: Notification) {
         NSApp.mainMenu = MainMenu.build()
@@ -203,6 +208,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     @objc func rotateLayout(_: Any?) { current?.toggleRotation() }
 
+    @objc func checkForUpdates(_ sender: Any?) { updater.checkForUpdates(sender) }
+
     @objc func cycleLayout(_: Any?) {
         guard let grid = current else { return }
         grid.setMode(grid.mode.next)
@@ -210,6 +217,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     /// Checks the current window's layout in the Layout menu.
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if item.action == #selector(checkForUpdates(_:)) {
+            return updater.updater.canCheckForUpdates
+        }
         if item.action == #selector(setLayout(_:)) {
             item.state = current?.mode == GridLayout.Mode.allCases[item.tag] ? .on : .off
         }

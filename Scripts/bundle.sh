@@ -14,6 +14,15 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp "$BIN/GhostGrid" "$APP/Contents/MacOS/GhostGrid"
+# The build number Sparkle compares with the feed's: the commit count, so a
+# build of a released commit is not offered that same release.
+plutil -replace CFBundleVersion -string "$(git rev-list --count HEAD 2>/dev/null || echo 1)" "$APP/Contents/Info.plist"
+# Sparkle, for in-app updates. Its XPC services are for sandboxed apps;
+# ghostgrid is not sandboxed, so they are left out (Sparkle's docs allow it).
+mkdir -p "$APP/Contents/Frameworks"
+ditto "$BIN/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
+rm -rf "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices" \
+  "$APP/Contents/Frameworks/Sparkle.framework/XPCServices"
 # The helper that keeps shells running after the app quits: a background-
 # only app of its own, so LaunchServices runs it as its own launchd job and
 # it is not ended with ghostgrid (see SessionDaemon.start).
@@ -34,7 +43,7 @@ cat >"$HELPER/Contents/Info.plist" <<'PLIST'
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>BUILD</string>
 	<key>LSBackgroundOnly</key>
 	<true/>
 	<key>LSMinimumSystemVersion</key>
@@ -42,6 +51,8 @@ cat >"$HELPER/Contents/Info.plist" <<'PLIST'
 </dict>
 </plist>
 PLIST
+plutil -replace CFBundleVersion -string "$(plutil -extract CFBundleVersion raw "$APP/Contents/Info.plist")" \
+  "$HELPER/Contents/Info.plist"
 # The helper is the parent of kept shells, so programs in them ask macOS
 # through it: it needs the app's usage descriptions too.
 for key in $(plutil -convert xml1 -o - Resources/Info.plist | sed -n 's|.*<key>\(NS[A-Za-z]*UsageDescription\)</key>.*|\1|p'); do

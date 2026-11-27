@@ -70,6 +70,15 @@
 	<string>A program running in ghostgrid wants to know your location.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>A program running in ghostgrid wants to read your photos.</string>
+	<!-- In-app updates (Sparkle): the latest release's appcast, written by
+	     Scripts/release.sh; updates must be signed with the release key,
+	     whose private half is in the keychain of the Mac that releases. -->
+	<key>SUFeedURL</key>
+	<string>https://github.com/brettbergin/ghostgrid/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>J9ueevxZb0m419YYAc4dl7o/QkaIIHBBVNP3k+oXDcg=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

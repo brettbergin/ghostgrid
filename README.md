@@ -18,6 +18,12 @@ From 0.1.1 the cask also puts `gg` on PATH (the copy bundled in the app at
 `Contents/Resources/bin/gg`, which opens the app it is in). Or download the
 DMG from the [releases](https://github.com/brettbergin/ghostgrid/releases).
 
+ghostgrid updates itself: it checks for a new release once a day, and
+ghostgrid > Check for Updates... checks now. An update downloads, replaces
+the app and relaunches it; your shells keep running through it (see
+Shells that survive quitting). With Homebrew, `brew upgrade --cask
+ghostgrid` works too.
+
 From source:
 
 ```bash
@@ -81,6 +87,25 @@ One-time setup:
    ```
 
 3. Ghostty in `/Applications` (its themes are bundled, see `bundle.sh`).
+4. The update signing key, in the keychain under the account `ghostgrid`
+   (Sparkle's `generate_keys`, from the resolved package; it prints the
+   public key, which goes in `Resources/Info.plist` as `SUPublicEDKey`):
+
+   ```bash
+   .build/artifacts/sparkle/Sparkle/bin/generate_keys --account ghostgrid
+   ```
+
+   Back it up (`generate_keys --account ghostgrid -x <file>`, then into a
+   password manager): an installed ghostgrid only takes updates signed with
+   it, so losing it strands every install on its version.
+
+A release also writes `build/release/appcast.xml`, Sparkle's feed for in-app
+updates, signed with the update key. Publish it with the DMG; installed
+apps read the latest release's copy:
+
+```bash
+gh release create v<version> build/release/ghostgrid-<version>.dmg* build/release/appcast.xml
+```
 
 After publishing a release, `make cask` points the Homebrew cask in
 `../homebrew-tap` (a checkout of brettbergin/homebrew-tap, or
@@ -92,8 +117,7 @@ notarized, to check it without certificates. Release builds carry
 `Resources/ghostgrid.entitlements`: no sandbox, but the permissions that
 let programs in a pane ask for the microphone, camera, contacts and so on,
 as Ghostty does. Publish with
-`gh release create v<version> build/release/ghostgrid-<version>.dmg*`
-(CI runs on Linux and cannot sign).
+the `gh release create` above (CI runs on Linux and cannot sign).
 
 ## Picking a shell
 

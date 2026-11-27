@@ -15,6 +15,9 @@
 #   GHOSTGRID_NOTARY_PROFILE  notarytool keychain profile (default ghostgrid-notary)
 #   GHOSTGRID_NOTARIZE=0      sign and package without notarizing
 #   GHOSTGRID_VERSION         version to stamp (default: Resources/Info.plist)
+#
+# A notarized release also writes build/release/appcast.xml (Sparkle's feed),
+# signed with the update key; publish it with the DMG.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -55,13 +58,24 @@ if [[ $NOTARIZE == 1 ]] && ! xcrun notarytool history --keychain-profile "$PROFI
 (it asks for an app-specific password from account.apple.com), or set GHOSTGRID_NOTARIZE=0."
 fi
 
+# In-app updates: the appcast is signed with the private key whose public
+# half every installed app trusts (Info.plist SUPublicEDKey), kept in this
+# Mac's keychain under the account "ghostgrid" (generate_keys, README).
+SPARKLE_BIN=".build/artifacts/sparkle/Sparkle/bin"
+SPARKLE_ACCOUNT="ghostgrid"
+if [[ $NOTARIZE == 1 ]]; then
+  swift package resolve >/dev/null
+  PUBLIC_KEY="$(plutil -extract SUPublicEDKey raw Resources/Info.plist)"
+  [[ "$("$SPARKLE_BIN/generate_keys" --account "$SPARKLE_ACCOUNT" -p 2>/dev/null)" == "$PUBLIC_KEY" ]] ||
+    die "the keychain has no update signing key matching SUPublicEDKey in Resources/Info.plist; see README, \"Releases\""
+fi
+
 # bundle.sh only warns when Ghostty's themes are missing; a release without
 # them would not resolve theme names, so it is an error here.
 [[ -d /Applications/Ghostty.app/Contents/Resources/ghostty/themes ]] ||
   die "Ghostty.app's themes are missing (/Applications/Ghostty.app); install Ghostty to bundle them"
 
 VERSION="${GHOSTGRID_VERSION:-$(plutil -extract CFBundleShortVersionString raw Resources/Info.plist)}"
-BUILD="$(git rev-list --count HEAD)"
 OUT="build/release"
 APP="build/ghostgrid.app"
 HELPER="$APP/Contents/Helpers/ghostgrid-sessiond.app"
@@ -74,10 +88,15 @@ rm -rf "$OUT"
 mkdir -p "$OUT"
 for plist in "$APP/Contents/Info.plist" "$HELPER/Contents/Info.plist"; do
   plutil -replace CFBundleShortVersionString -string "$VERSION" "$plist"
-  plutil -replace CFBundleVersion -string "$BUILD" "$plist"
 done
+BUILD="$(plutil -extract CFBundleVersion raw "$APP/Contents/Info.plist")" # bundle.sh: the commit count
 
-# Inside out: the helper first, then the app that seals it.
+# Inside out: Sparkle's helpers and framework, the session helper, then
+# the app that seals them (Sparkle's documented order; no --deep).
+SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
+for code in "$SPARKLE/Versions/B/Autoupdate" "$SPARKLE/Versions/B/Updater.app" "$SPARKLE"; do
+  codesign --force --options runtime "${TIMESTAMP[@]}" --sign "$IDENTITY" "$code"
+done
 for code in "$HELPER" "$APP"; do
   codesign --force --options runtime "${TIMESTAMP[@]}" \
     --entitlements Resources/ghostgrid.entitlements --sign "$IDENTITY" "$code"
@@ -90,6 +109,10 @@ for code in "$HELPER" "$APP"; do
   entitlements="$(codesign -d --entitlements - "$code" 2>/dev/null)"
   [[ $entitlements == *device.audio-input* ]] || die "$code is missing its entitlements"
   [[ $entitlements != *get-task-allow* ]] || die "$code allows debugging (get-task-allow); notarization rejects it"
+done
+for code in "$SPARKLE/Versions/B/Autoupdate" "$SPARKLE/Versions/B/Updater.app" "$SPARKLE"; do
+  details="$(codesign -dv "$code" 2>&1)"
+  [[ $details == *flags=*runtime* ]] || die "$code is not signed with the hardened runtime"
 done
 
 # Waits for Apple's verdict on $1 and prints the log when it is not Accepted.
@@ -132,9 +155,13 @@ if [[ $NOTARIZE == 1 ]]; then
   spctl --assess --type open --context context:primary-signature "$DMG" ||
     die "Gatekeeper rejects $DMG"
   spctl --assess --type execute "$APP" || die "Gatekeeper rejects $APP"
+  # Signed after stapling, which changes the DMG's bytes.
+  SIGNATURE="$("$SPARKLE_BIN/sign_update" --account "$SPARKLE_ACCOUNT" "$DMG")"
+  Scripts/appcast.sh "$VERSION" "$BUILD" "$SIGNATURE" >"$OUT/appcast.xml"
 else
   echo "release.sh: not notarized; other Macs will refuse to open it" >&2
 fi
 
 (cd "$OUT" && shasum -a 256 "$(basename "$DMG")" >"$(basename "$DMG").sha256")
 echo "Built $DMG ($IDENTITY)"
+[[ -f $OUT/appcast.xml ]] && echo "Publish $OUT/appcast.xml with it: installed apps read the latest release's copy"
