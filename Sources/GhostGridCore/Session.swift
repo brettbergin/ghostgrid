@@ -30,13 +30,17 @@ public struct Session: Codable, Equatable, Sendable {
         public var weights: LayoutWeights?
         /// The grid's panes per row after rows were moved; nil: balanced.
         public var rows: [Int]?
+        /// Rotate Layout: the split the window's shape would pick, turned
+        /// (stacked in a wide window); nil in older sessions: not rotated.
+        public var rotated: Bool?
 
         public init(
             frame: CGRect, panes: [Pane], focused: Int? = nil, zoomed: Int? = nil, layout: GridLayout.Mode? = nil,
-            weights: LayoutWeights? = nil, rows: [Int]? = nil,
+            weights: LayoutWeights? = nil, rows: [Int]? = nil, rotated: Bool? = nil,
         ) {
             self.weights = weights
             self.rows = rows
+            self.rotated = rotated
             self.frame = frame
             self.panes = panes
             self.focused = focused
