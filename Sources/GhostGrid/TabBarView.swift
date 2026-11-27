@@ -44,17 +44,33 @@ final class TabBarView: NSView, NSTextFieldDelegate {
     private var editing: Int?
     private var cancelled = false
 
-    override var isFlipped: Bool { true }
-    override var mouseDownCanMoveWindow: Bool { true }
+    init() {
+        super.init(frame: .zero)
+        // Scrolled tabs must not draw over the traffic lights.
+        clipsToBounds = true
+    }
 
-    /// Only the tabs take clicks; the rest of the bar falls through to the
-    /// titlebar, which drags and zooms the window.
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        guard !isHidden, let superview else { return nil }
-        let local = convert(point, from: superview)
-        if let editor, editor.frame.contains(local) { return super.hitTest(point) }
-        guard views.contains(where: { $0.frame.contains(local) }) else { return nil }
-        return super.hitTest(point)
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    override var isFlipped: Bool { true }
+
+    /// The bar covers the titlebar, so its empty space acts as one: drag it
+    /// to move the window, double-click it for the titlebar double-click
+    /// action in System Settings (zoom unless set otherwise).
+    override func mouseDown(with event: NSEvent) {
+        guard let window else { return }
+        guard event.clickCount == 2 else {
+            window.performDrag(with: event)
+            return
+        }
+        switch UserDefaults.standard.string(forKey: "AppleActionOnDoubleClick") {
+        case "Minimize": window.performMiniaturize(nil)
+        case "None", "Do Nothing": break
+        default: window.performZoom(nil)
+        }
     }
 
     // MARK: - Items
