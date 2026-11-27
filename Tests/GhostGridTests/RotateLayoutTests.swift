@@ -68,10 +68,10 @@ struct RotateLayoutTests {
     }
 
     @Test func rotationIsSaved() throws {
-        let window = Session.Window(frame: wide, panes: [], layout: .grid, rotated: true)
-        let decoded = try JSONDecoder().decode(Session.Window.self, from: JSONEncoder().encode(window))
+        let tab = Session.Tab(panes: [], layout: .grid, rotated: true)
+        let decoded = try JSONDecoder().decode(Session.Tab.self, from: JSONEncoder().encode(tab))
         #expect(decoded.rotated == true)
-        let old = Data(#"{"frame":[[0,0],[10,10]],"panes":[]}"#.utf8)
-        #expect(try JSONDecoder().decode(Session.Window.self, from: old).rotated == nil)
+        let old = Data(#"{"panes":[]}"#.utf8)
+        #expect(try JSONDecoder().decode(Session.Tab.self, from: old).rotated == nil)
     }
 }

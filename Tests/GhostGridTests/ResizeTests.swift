@@ -115,10 +115,11 @@ struct ResizeTests {
 
     @Test func weightsRoundTripThroughTheSession() throws {
         let weights = drag(.track(0), 50, 4, .grid)
-        let session = Session(windows: [.init(frame: .zero, panes: [.init(shell: "zsh", workingDirectory: nil)],
-                                              layout: .grid, weights: weights)])
-        #expect(Session.decode(try session.encoded())?.windows.first?.weights == weights)
+        let session = Session(windows: [.init(frame: .zero, tabs: [
+            .init(panes: [.init(shell: "zsh", workingDirectory: nil)], layout: .grid, weights: weights),
+        ])])
+        #expect(Session.decode(try session.encoded())?.windows.first?.tabs.first?.weights == weights)
         let old = #"{"version":1,"windows":[{"frame":[[0,0],[10,10]],"panes":[{"shell":"zsh"}]}]}"#
-        #expect(Session.decode(Data(old.utf8))?.windows.first?.weights == nil)
+        #expect(Session.decode(Data(old.utf8))?.windows.first?.tabs.first?.weights == nil)
     }
 }
