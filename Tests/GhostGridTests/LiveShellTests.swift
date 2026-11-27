@@ -10,15 +10,15 @@ import Testing
 /// would not, and panes get Ghostty's shell-integration features.
 struct LiveShellTests {
     @Test func aPaneRemembersItsRunningShell() throws {
-        let session = Session(windows: [.init(frame: .zero, panes: [
+        let session = Session(windows: [.init(frame: .zero, tabs: [.init(panes: [
             .init(shell: "zsh", workingDirectory: "/tmp", sessionID: "abc"),
             .init(shell: "bash", workingDirectory: nil),
-        ])])
+        ])])])
         let decoded = try #require(Session.decode(try session.encoded()))
-        #expect(decoded.windows[0].panes.map(\.sessionID) == ["abc", nil])
+        #expect(decoded.windows[0].tabs[0].panes.map(\.sessionID) == ["abc", nil])
         #expect(decoded.liveSessionIDs == ["abc"])
         let old = #"{"version":1,"windows":[{"frame":[[0,0],[10,10]],"panes":[{"shell":"zsh"}]}]}"#
-        #expect(Session.decode(Data(old.utf8))?.windows[0].panes[0].sessionID == nil, "older files still load")
+        #expect(Session.decode(Data(old.utf8))?.windows[0].tabs[0].panes[0].sessionID == nil, "older files still load")
     }
 
     @Test func liveShellsComeBackUnlessRestoreIsOff() {

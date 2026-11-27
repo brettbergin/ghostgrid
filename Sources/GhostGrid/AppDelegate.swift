@@ -127,12 +127,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         guard !session.restorable.isEmpty else { return false }
         let screens = NSScreen.screens.map(\.visibleFrame)
         for saved in session.restorable {
-            let window = makeWindow()
-            if let frame = SessionPolicy.fit(saved.frame, screens: screens) {
-                window.window?.setFrame(frame, display: false)
+            // A window shows one tab until the tab bar exists: a session
+            // saved with several opens each tab in a window of its own, so
+            // no kept shell is left behind. The selected one opens last, in
+            // front.
+            let selected = saved.selectedTab ?? 0
+            let tabs = saved.tabs.indices.filter { $0 != selected } + [selected]
+            for index in tabs where saved.tabs.indices.contains(index) {
+                let window = makeWindow()
+                if let frame = SessionPolicy.fit(saved.frame, screens: screens) {
+                    window.window?.setFrame(frame, display: false)
+                }
+                window.showWindow(nil)
+                window.grid.restore(saved.tabs[index])
             }
-            window.showWindow(nil)
-            window.grid.restore(saved)
         }
         return true
     }
@@ -150,11 +158,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private func saveSession() {
         let saved: [Session.Window] = windows.compactMap { controller in
             guard let window = controller.window else { return nil }
-            let grid = controller.grid.snapshot()
-            return Session.Window(
-                frame: window.frame, panes: grid.panes, focused: grid.focused, zoomed: grid.zoomed, layout: grid.layout,
-                weights: grid.weights, rows: grid.rows, rotated: grid.rotated ? true : nil,
-            )
+            return Session.Window(frame: window.frame, tabs: [controller.grid.snapshot()], selectedTab: 0)
         }
         SessionStore.save(Session(windows: saved))
     }

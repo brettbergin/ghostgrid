@@ -122,10 +122,10 @@ struct RowMoveTests {
     }
 
     @Test func theMovedShapeIsSaved() throws {
-        let window = Session.Window(frame: wide, panes: [], layout: .grid, rows: [1, 2])
-        let decoded = try JSONDecoder().decode(Session.Window.self, from: JSONEncoder().encode(window))
+        let tab = Session.Tab(panes: [], layout: .grid, rows: [1, 2])
+        let decoded = try JSONDecoder().decode(Session.Tab.self, from: JSONEncoder().encode(tab))
         #expect(decoded.rows == [1, 2])
-        let old = Data(#"{"frame":[[0,0],[10,10]],"panes":[]}"#.utf8)
-        #expect(try JSONDecoder().decode(Session.Window.self, from: old).rows == nil)
+        let old = Data(#"{"panes":[]}"#.utf8)
+        #expect(try JSONDecoder().decode(Session.Tab.self, from: old).rows == nil)
     }
 }

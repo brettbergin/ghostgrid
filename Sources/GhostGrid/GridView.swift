@@ -222,12 +222,10 @@ final class GridView: NSView {
 
     // MARK: - Session
 
-    /// The panes worth saving, in grid order: those running a shell (a
-    /// pane still showing its menu is skipped), with focus and zoom.
-    func snapshot() -> (
-        panes: [Session.Pane], focused: Int?, zoomed: Int?, layout: GridLayout.Mode, weights: LayoutWeights?, rows: [Int]?,
-        rotated: Bool,
-    ) {
+    /// This grid as a saved tab: the panes worth saving, in grid order
+    /// (those running a shell; a pane still showing its menu is skipped),
+    /// with focus, zoom and layout. The name and color belong to the tab.
+    func snapshot() -> Session.Tab {
         var saved: [Session.Pane] = []
         var focusedIndex: Int?
         var zoomedIndex: Int?
@@ -242,14 +240,17 @@ final class GridView: NSView {
         // menu is not saved, so they would not fit.
         let complete = saved.count == panes.count
         let kept = complete && !weightsFromAttention ? weights : nil
-        return (saved, focusedIndex, zoomedIndex, mode, kept, complete ? rows : nil, rotated)
+        return Session.Tab(
+            panes: saved, focused: focusedIndex, zoomed: zoomedIndex, layout: mode, weights: kept,
+            rows: complete ? rows : nil, rotated: rotated ? true : nil,
+        )
     }
 
-    /// Rebuilds a saved window's panes, without animation. A saved shell
+    /// Rebuilds a saved tab's panes, without animation. A saved shell
     /// that is no longer installed gets the shell menu instead.
-    func restore(_ window: Session.Window) {
+    func restore(_ tab: Session.Tab) {
         let shells = shells
-        for saved in window.panes {
+        for saved in tab.panes {
             let shell = shells.first { $0.name == saved.shell && $0.isInstalled }
             let pane = PaneView(
                 controllerFor: controllerFor,
@@ -263,13 +264,13 @@ final class GridView: NSView {
             panes.append(pane)
             addSubview(pane)
         }
-        zoomed = window.zoomed.map { panes[$0] }
-        mode = window.layout ?? .grid
-        weights = window.weights
-        rows = window.rows
-        rotated = window.rotated ?? false
+        zoomed = tab.zoomed.map { panes[$0] }
+        mode = tab.layout ?? .grid
+        weights = tab.weights
+        rows = tab.rows
+        rotated = tab.rotated ?? false
         apply(targetFrames(), animated: false)
-        (window.focused.map { panes[$0] } ?? panes.last)?.focus()
+        (tab.focused.map { panes[$0] } ?? panes.last)?.focus()
     }
 
     /// Ends every pane's shell (the window is closing for good, or

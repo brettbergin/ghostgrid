@@ -301,6 +301,12 @@ it from the session. Saved to
 `~/Library/Application Support/ghostgrid/session.json` on quit and shortly
 after each change, so a crash loses little.
 
+The file is saved per tab (format version 2), ready for tabs. A session
+saved by 0.2.1 or earlier loads as one tab per window, kept shells
+included. Going back to 0.2.1 or earlier after that is not supported: those
+versions cannot read the newer file, so they open a fresh window and
+shells kept for the old one keep running unattached.
+
 ## Settings
 
 ghostgrid > Settings... (Cmd+,) holds ghostgrid's own options, saved in

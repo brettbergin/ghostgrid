@@ -7,10 +7,11 @@ import Testing
 
 struct SessionTests {
     let session = Session(windows: [
-        .init(frame: CGRect(x: 100, y: 200, width: 1280, height: 800),
-              panes: [.init(shell: "zsh", workingDirectory: "/Users/me/code"),
-                      .init(shell: "nushell", workingDirectory: nil)],
-              focused: 1, zoomed: nil),
+        .init(frame: CGRect(x: 100, y: 200, width: 1280, height: 800), tabs: [
+            .init(panes: [.init(shell: "zsh", workingDirectory: "/Users/me/code"),
+                          .init(shell: "nushell", workingDirectory: nil)],
+                  focused: 1, zoomed: nil),
+        ]),
     ])
 
     @Test func roundTripsThroughJSON() throws {
@@ -26,13 +27,13 @@ struct SessionTests {
 
     @Test func restorableDropsEmptyWindowsAndBadIndices() {
         let messy = Session(windows: [
-            .init(frame: .zero, panes: []),
-            .init(frame: .zero, panes: [.init(shell: "bash", workingDirectory: "/tmp")], focused: 5, zoomed: 0),
+            .init(frame: .zero, tabs: [.init(panes: [])]),
+            .init(frame: .zero, tabs: [.init(panes: [.init(shell: "bash", workingDirectory: "/tmp")], focused: 5, zoomed: 0)]),
         ])
         let restorable = messy.restorable
         #expect(restorable.count == 1)
-        #expect(restorable[0].focused == nil)
-        #expect(restorable[0].zoomed == 0)
+        #expect(restorable[0].tabs[0].focused == nil)
+        #expect(restorable[0].tabs[0].zoomed == 0)
     }
 }
 
@@ -71,9 +72,11 @@ struct SessionPolicyTests {
 
 struct SessionLayoutTests {
     @Test func layoutRoundTripsAndOldSessionsStillDecode() throws {
-        let session = Session(windows: [.init(frame: .zero, panes: [.init(shell: "zsh", workingDirectory: nil)], layout: .mainStack)])
-        #expect(Session.decode(try session.encoded())?.windows.first?.layout == .mainStack)
+        let session = Session(windows: [.init(frame: .zero, tabs: [
+            .init(panes: [.init(shell: "zsh", workingDirectory: nil)], layout: .mainStack),
+        ])])
+        #expect(Session.decode(try session.encoded())?.windows.first?.tabs.first?.layout == .mainStack)
         let old = #"{"version":1,"windows":[{"frame":[[0,0],[10,10]],"panes":[{"shell":"zsh"}]}]}"#
-        #expect(Session.decode(Data(old.utf8))?.windows.first?.layout == nil)
+        #expect(Session.decode(Data(old.utf8))?.windows.first?.tabs.first?.layout == nil)
     }
 }
