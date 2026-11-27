@@ -25,7 +25,7 @@ extension MenuItem {
 }
 
 /// The menu card a pane shows before it starts: the shell menu, then for
-/// zsh (on Cmd+Shift+T) the app menu.
+/// zsh (on Cmd+Shift+T or Cmd+Shift+D) the app menu.
 /// Keys: a number picks that item at once; Up/Down and Return pick the
 /// highlighted one; Escape calls onEscape. Clicking a row works too.
 @MainActor

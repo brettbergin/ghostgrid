@@ -188,9 +188,18 @@ final class PaneView: NSView {
     private var cornerBadge: ActivityBadgeView?
     private var branch: String?
     /// Something that happened while you were not looking at this pane.
-    private var activity: PaneActivity? {
-        didSet { (header?.badge ?? cornerBadge)?.activity = activity }
+    private(set) var activity: PaneActivity? {
+        didSet {
+            (header?.badge ?? cornerBadge)?.activity = activity
+            guard activity != oldValue else { return }
+            activityAt = activity == nil ? nil : Date()
+            onActivityChange?(self)
+        }
     }
+    /// When `activity` appeared (its tab's badge counts only what is new).
+    private(set) var activityAt: Date?
+    /// The badge appeared or cleared.
+    var onActivityChange: ((PaneView) -> Void)?
     private var settings: GhostGridSettings { .shared }
 
     var onFocus: ((PaneView) -> Void)?
@@ -712,9 +721,18 @@ final class PaneView: NSView {
     }
 
     /// Whether you are looking at this pane: focused in its grid, in the
-    /// key window of the active app.
+    /// tab that is showing (a background tab's grid is hidden), in the key
+    /// window of the active app.
     private var isWatched: Bool {
-        isFocusedPane && window?.isKeyWindow == true && NSApp.isActive
+        isFocusedPane && !isHiddenOrHasHiddenAncestor && window?.isKeyWindow == true && NSApp.isActive
+    }
+
+    /// Its tab came to the front: the focused pane is being looked at now.
+    func tabDidShow() {
+        if isFocusedPane, window?.isKeyWindow == true {
+            activity = nil
+            needsYou = false
+        }
     }
 
     private func note(_ new: PaneActivity) {
@@ -734,9 +752,10 @@ final class PaneView: NSView {
         }
     }
 
-    /// Coming back to the window clears the focused pane's badge.
+    /// Coming back to the window clears the focused pane's badge (in the
+    /// tab that is showing).
     @objc private func windowBecameKey() {
-        if isFocusedPane { activity = nil }
+        if isFocusedPane, !isHiddenOrHasHiddenAncestor { activity = nil }
     }
 
     // MARK: - Unfocused dimming

@@ -1,7 +1,7 @@
 # ghostgrid
 
-A macOS terminal built on Ghostty's engine (libghostty) where every new
-"tab" is a pane that joins an animated, auto-balanced grid.
+A macOS terminal built on Ghostty's engine (libghostty) where each tab is
+an animated, auto-balanced grid of panes.
 
 It loads your own `~/.config/ghostty` config, so theme, font, padding,
 opacity and shaders match your Ghostty.
@@ -123,11 +123,11 @@ the `gh release create` above (CI runs on Linux and cannot sign).
 
 ## Picking a shell
 
-The first pane ever, and every Cmd+Shift+T pane, opens with a menu:
-**1** zsh, **2** nushell, **3** bash. ghostgrid remembers your pick (also
-across launches), so Cmd+T and new windows start that shell directly;
-the menu opens with it highlighted. If the remembered shell is no longer
-installed, Cmd+T shows the menu instead. Forget it with
+The first pane ever, and every Cmd+Shift+T tab and Cmd+Shift+D pane,
+opens with a menu: **1** zsh, **2** nushell, **3** bash. ghostgrid
+remembers your pick (also across launches), so Cmd+T, Cmd+D and new windows
+start that shell directly; the menu opens with it highlighted. If the
+remembered shell is no longer installed, they show the menu instead. Forget it with
 **Forget** in Settings (or `defaults delete com.brettbergin.ghostgrid lastShell`).
 Press the number to start that shell at once, or use Up/Down and Return;
 Escape cancels and closes the pane. A shell that is not installed is shown
@@ -137,7 +137,7 @@ system bash 3.2). Shells start as login shells, so `~/.zprofile` loads.
 
 ### Apps in a new zsh pane
 
-Picking **zsh** from the Cmd+Shift+T menu opens a second menu of apps to
+Picking **zsh** from the Cmd+Shift+T or Cmd+Shift+D menu opens a second menu of apps to
 start in it. The list is yours, in Settings > zsh app launcher: each app is
 a name, the command typed at the prompt (aliases and functions work) and a
 description; add, remove and reorder up to 9 (keys 1-9 in list order). It
@@ -148,7 +148,7 @@ Press the number to launch; **Escape** drops you into a plain zsh. The
 app's command is typed at zsh's first prompt, so it lands in history and
 quitting the app leaves you at the zsh prompt in the same pane. An app whose
 program is not found is marked "(not found)" but stays pickable, since the
-command may be an alias. Cmd+T never shows this menu.
+command may be an alias. Cmd+T and Cmd+D never show this menu.
 
 This libghostty build ignores a per-pane command, so each shell gets its
 own Ghostty app instance whose config ends with `command = <shell> -l`
@@ -157,14 +157,47 @@ the first time a pane picks that shell. The package bundles Ghostty's
 zsh and bash integration only, so other shells (nushell) run with
 `shell-integration = none`; nushell emits its own prompt markers.
 
+## Tabs
+
+A window holds tabs, and each tab is its own grid of panes with its own
+layout, zoom and broadcast. Cmd+T opens a tab right after the one in front,
+with your last shell in the folder you were in; Cmd+1 to Cmd+8 show that
+tab, Cmd+9 the last one, and Cmd+Shift+] / [ (or Ctrl+Tab /
+Ctrl+Shift+Tab) the next and previous.
+
+The tab bar sits in the titlebar beside the traffic lights once there are
+two tabs, or when the only one has a name or color (in full screen, above
+the panes). Tabs share the bar's width and it scrolls when they no longer
+fit.
+
+- Click a tab to show it; drag it along the bar to move it.
+- Double-click a tab (or Tab > Rename Tab...) to name it: Return keeps the
+  name, Escape cancels, and an empty name goes back to "Tab N". Unnamed
+  tabs are numbered by position, matching their Cmd+N shortcut.
+- Right-click a tab (or Tab > Tab Color) to color it with one of eight
+  Catppuccin colors, or None.
+- The x on a tab, a middle click, or Cmd+Option+W closes it and ends its
+  shells. Closing a tab's last pane closes the tab; closing the last tab
+  closes the window. Right-click > Close Other Tabs keeps only that one.
+- While a tab is in the background, a bell or a long command finishing or
+  failing in it shows the same badge on the tab as on the pane header.
+  Showing the tab clears it.
+
 ## Keys
 
 | Keys                  | Action                                   |
 |-----------------------|------------------------------------------|
-| Cmd+T / Cmd+D         | New pane with your last shell (inherits cwd) |
-| Cmd+Shift+T           | New pane, choosing the shell from the menu |
+| Cmd+T                 | New tab with your last shell (inherits cwd) |
+| Cmd+Shift+T           | New tab, choosing the shell from the menu |
+| Cmd+1...8 / Cmd+9     | Show that tab / the last tab             |
+| Cmd+Shift+] / [       | Next / previous tab (also Ctrl+Tab / Ctrl+Shift+Tab) |
+| Cmd+Option+W          | Close tab                                |
+| Cmd+D                 | New pane with your last shell (inherits cwd) |
+| Cmd+Shift+D           | New pane, choosing the shell from the menu |
+| Cmd+Option+1...9      | Focus the pane at that position          |
 | Cmd+W                 | Close pane                               |
-| Cmd+Shift+Enter       | Zoom pane to fill the window and back    |
+| Cmd+Shift+W           | Close window                             |
+| Cmd+Shift+Enter       | Zoom pane to fill the tab and back       |
 | Cmd+] / Cmd+[         | Next / previous pane                     |
 | Cmd+Option+arrows     | Focus the pane in that direction         |
 | Cmd+Shift+arrows      | Swap the focused pane with that neighbour (or move its row) |
@@ -227,7 +260,7 @@ fix it. The answer streams in as the model writes it.
 ## Broadcast typing
 
 Shell > Broadcast Input to All Panes (Cmd+Opt+I) sends what you type in the
-focused pane to every other pane of the window as well: run the same
+focused pane to every other pane of the tab as well: run the same
 command on several hosts, or answer the same prompt everywhere. While it is
 on, every pane header turns red and says BROADCAST, pane borders go red,
 and the window title starts with "BROADCAST:". Press Cmd+Opt+I again to
@@ -238,7 +271,7 @@ stop.
 - Command shortcuts (new pane, close, copy) still act once, on the focused
   pane. Cmd+V pastes into every pane.
 - Panes still showing their shell menu are skipped.
-- It is per window and never saved: a restored window types into one pane.
+- It is per tab and never saved: a restored tab types into one pane.
 
 ## Pane headers and activity badges
 
@@ -254,7 +287,8 @@ Panes you are not looking at get a badge when something happens there:
 - **✕ exit 2** (red): such a command failed, with its exit code.
 
 Focusing the pane (or coming back to the window) clears it. "Not looking"
-means not the focused pane of the key window of the active app, so a long
+means not the focused pane of the tab in front, in the key window of the
+active app, so a long
 build finishing while you are in another app badges too. Both are
 optional in Settings; with headers off, badges sit in the pane's corner.
 Finished-command badges need shell integration (zsh and bash via
@@ -301,11 +335,12 @@ it from the session. Saved to
 `~/Library/Application Support/ghostgrid/session.json` on quit and shortly
 after each change, so a crash loses little.
 
-The file is saved per tab (format version 2), ready for tabs. A session
-saved by 0.2.1 or earlier loads as one tab per window, kept shells
-included. Going back to 0.2.1 or earlier after that is not supported: those
-versions cannot read the newer file, so they open a fresh window and
-shells kept for the old one keep running unattached.
+Tabs come back in order with their names and colors, and the tab that was
+in front is in front again. A session saved by 0.2.1 or earlier loads as
+one tab per window, kept shells included. Going back to 0.2.1 or earlier
+after that is not supported: those versions cannot read the newer file, so
+they open a fresh window and shells kept for the old one keep running
+unattached.
 
 ## Settings
 

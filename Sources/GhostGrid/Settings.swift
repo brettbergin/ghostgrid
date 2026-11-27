@@ -12,12 +12,13 @@ final class GhostGridSettings: ObservableObject {
 
     private let defaults = UserDefaults.standard
 
-    /// Cmd+T starts the last used shell (true) or always shows the menu.
+    /// New tabs (Cmd+T) and panes (Cmd+D) start the last used shell (true)
+    /// or always show the menu.
     @Published var newPaneUsesLastShell: Bool {
         didSet { save(newPaneUsesLastShell, "newPaneUsesLastShell") }
     }
 
-    /// After picking zsh on Cmd+Shift+T, offer the app menu.
+    /// After picking zsh on Cmd+Shift+T or Cmd+Shift+D, offer the app menu.
     @Published var offerAppsAfterZsh: Bool {
         didSet { save(offerAppsAfterZsh, "offerAppsAfterZsh") }
     }
@@ -141,8 +142,8 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section("New panes") {
-                Picker("Cmd+T opens", selection: $settings.newPaneUsesLastShell) {
+            Section("New tabs and panes") {
+                Picker("Cmd+T and Cmd+D open", selection: $settings.newPaneUsesLastShell) {
                     Text("Your last shell").tag(true)
                     Text("The shell menu").tag(false)
                 }
@@ -154,7 +155,7 @@ struct SettingsView: View {
                             .disabled(settings.lastShell == nil)
                     }
                 }
-                Toggle("Offer apps after choosing zsh (Cmd+Shift+T)", isOn: $settings.offerAppsAfterZsh)
+                Toggle("Offer apps after choosing zsh (Cmd+Shift+T, Cmd+Shift+D)", isOn: $settings.offerAppsAfterZsh)
             }
 
             LauncherSettingsSection(settings: settings)
@@ -293,7 +294,7 @@ enum LibghosttyBuild {
 }
 
 /// Settings > zsh app launcher: the apps the launcher offers after choosing
-/// zsh on Cmd+Shift+T. Each row is a name, the command typed at the prompt,
+/// zsh on Cmd+Shift+T or Cmd+Shift+D. Each row is a name, the command typed at the prompt,
 /// and a description; keys 1-9 follow the order here.
 struct LauncherSettingsSection: View {
     @ObservedObject var settings: GhostGridSettings
@@ -329,7 +330,7 @@ struct LauncherSettingsSection: View {
         } header: {
             Text("zsh app launcher")
         } footer: {
-            Text("Offered after choosing zsh with Cmd+Shift+T (when the toggle above is on). The command is typed at the zsh prompt, so aliases and functions work; quitting the app leaves you in zsh. Up to \(LaunchCatalog.maximumEntries) apps, keys 1-\(LaunchCatalog.maximumEntries) in this order.")
+            Text("Offered after choosing zsh with Cmd+Shift+T or Cmd+Shift+D (when the toggle above is on). The command is typed at the zsh prompt, so aliases and functions work; quitting the app leaves you in zsh. Up to \(LaunchCatalog.maximumEntries) apps, keys 1-\(LaunchCatalog.maximumEntries) in this order.")
                 .foregroundStyle(.secondary)
         }
     }

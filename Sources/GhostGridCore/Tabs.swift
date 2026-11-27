@@ -1,3 +1,5 @@
+import Foundation
+
 /// A window's tabs in order, and which one is selected. Each tab holds its
 /// own grid of panes; the window shows only the selected one.
 ///
@@ -127,5 +129,97 @@ public enum TabActivity {
         return badges.first(where: \.failed)
             ?? badges.first { $0 == .bell }
             ?? badges.first
+    }
+}
+
+/// Where tabs sit in the tab bar: they share its width evenly, in whole
+/// points, between a minimum and a maximum; when they would be narrower than
+/// the minimum they stay at it and the bar scrolls.
+public struct TabBarLayout: Sendable {
+    public struct Slot: Equatable, Sendable {
+        public var minX: CGFloat
+        public var width: CGFloat
+        public var midX: CGFloat { minX + width / 2 }
+    }
+
+    public var minimumWidth: CGFloat
+    public var maximumWidth: CGFloat
+    public var spacing: CGFloat
+
+    public init(minimumWidth: CGFloat, maximumWidth: CGFloat, spacing: CGFloat) {
+        self.minimumWidth = minimumWidth
+        self.maximumWidth = maximumWidth
+        self.spacing = spacing
+    }
+
+    /// Each tab's width for `count` tabs in a bar `width` wide.
+    public func tabWidth(count: Int, width: CGFloat) -> CGFloat {
+        guard count > 0 else { return 0 }
+        let share = ((width - spacing * CGFloat(count - 1)) / CGFloat(count)).rounded(.down)
+        return min(max(share, minimumWidth), maximumWidth)
+    }
+
+    public func frames(count: Int, width: CGFloat) -> [Slot] {
+        let tab = tabWidth(count: count, width: width)
+        return (0..<max(count, 0)).map { Slot(minX: CGFloat($0) * (tab + spacing), width: tab) }
+    }
+
+    /// How wide the tabs are together; more than `width` means the bar scrolls.
+    public func contentWidth(count: Int, width: CGFloat) -> CGFloat {
+        guard count > 0 else { return 0 }
+        return CGFloat(count) * tabWidth(count: count, width: width) + spacing * CGFloat(count - 1)
+    }
+
+    /// The slot a tab dragged along the bar lands in: the one whose middle
+    /// is nearest the dragged tab's middle.
+    public func dropIndex(forMiddle middle: CGFloat, count: Int, width: CGFloat) -> Int {
+        let slots = frames(count: count, width: width)
+        guard !slots.isEmpty else { return 0 }
+        return slots.indices.min { abs(slots[$0].midX - middle) < abs(slots[$1].midX - middle) } ?? 0
+    }
+
+    /// The bar shows with two or more tabs, or with a single tab you named
+    /// or colored (so the name or color is visible).
+    public static func shows(count: Int, onlyTabCustomized: Bool) -> Bool {
+        count > 1 || (count == 1 && onlyTabCustomized)
+    }
+}
+
+extension TabActivity {
+    /// A tab's badge counting only what happened since you last looked at
+    /// it (`since`; nil: never, so everything counts).
+    public static func badge(for panes: [(activity: PaneActivity?, at: Date?)], since: Date?) -> PaneActivity? {
+        badge(for: panes.map { pane in
+            guard let since else { return pane.activity }
+            return (pane.at.map { $0 >= since } ?? false) ? pane.activity : nil
+        })
+    }
+}
+
+/// Where the tab bar sits. In a window: in the titlebar beside the
+/// traffic lights, with the panes where they always were. In full screen
+/// there is no titlebar to sit in (the window may still report its height),
+/// so the bar goes above the panes, which move down for it only while it
+/// shows.
+public struct TabBarPlacement: Equatable, Sendable {
+    public var barHeight: CGFloat
+    /// How far below the top of the safe area the panes start.
+    public var gridTop: CGFloat
+    /// The bar's left edge, from the window's.
+    public var leading: CGFloat
+
+    public static let fullScreenHeight: CGFloat = 30
+
+    public init(barHeight: CGFloat, gridTop: CGFloat, leading: CGFloat) {
+        self.barHeight = barHeight
+        self.gridTop = gridTop
+        self.leading = leading
+    }
+
+    public static func place(fullScreen: Bool, titlebarHeight: CGFloat, buttonsMaxX: CGFloat, visible: Bool) -> TabBarPlacement {
+        if !fullScreen, titlebarHeight > 0 {
+            return TabBarPlacement(barHeight: titlebarHeight, gridTop: 0, leading: buttonsMaxX + 12)
+        }
+        return TabBarPlacement(barHeight: fullScreenHeight, gridTop: visible ? fullScreenHeight : 0, leading: 8)
     }
 }

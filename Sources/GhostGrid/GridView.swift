@@ -82,6 +82,39 @@ final class GridView: NSView {
     /// Something worth saving changed (panes, focus, zoom, a folder).
     var onChange: (() -> Void)?
     var onTitleChange: ((String) -> Void)?
+    /// A pane's badge appeared or cleared (the tab's badge follows).
+    var onActivityChange: (() -> Void)?
+
+    /// This grid's tab is the one showing in its window. A tab in the
+    /// background keeps its shells running, but its grid is hidden, its
+    /// terminals stop drawing and its attention grid waits.
+    var isShowing = true {
+        didSet {
+            guard isShowing != oldValue else { return }
+            isHidden = !isShowing
+            apply(targetFrames(), animated: false)
+            if isShowing {
+                lastLevels = []
+                updateAttention()
+            }
+        }
+    }
+
+    /// Each pane's badge and when it appeared, in grid order.
+    var activities: [(activity: PaneActivity?, at: Date?)] {
+        panes.map { ($0.activity, $0.activityAt) }
+    }
+
+    /// The focused pane's title, for the window title.
+    var title: String { focused?.title ?? "" }
+
+    /// Gives keyboard focus back to the focused pane (its tab came to the
+    /// front), which also clears what it was showing you.
+    func focusCurrent() {
+        let pane = focused ?? panes.last
+        pane?.focus()
+        pane?.tabDidShow()
+    }
 
     init(controllerFor: @escaping ControllerProvider) {
         self.controllerFor = controllerFor
@@ -119,7 +152,7 @@ final class GridView: NSView {
     /// Re-weighs the panes by attention (Settings > Grid), moving only when
     /// some pane's level changed, with a soft ease rather than the spring.
     private func updateAttention() {
-        guard settings.attentionGrid, !attentionPaused, zoomed == nil, dragging == nil, resizing == nil,
+        guard settings.attentionGrid, isShowing, !attentionPaused, zoomed == nil, dragging == nil, resizing == nil,
               panes.count > 1
         else { return }
         let levels = panes.map { $0.attentionLevel(now: Date()) }
@@ -208,6 +241,7 @@ final class GridView: NSView {
         pane.onWorkingDirectoryChange = { [weak self] _ in self?.onChange?() }
         pane.onSessionChange = { [weak self] _ in self?.onChange?() }
         pane.onAttentionChange = { [weak self] _ in self?.updateAttention() }
+        pane.onActivityChange = { [weak self] _ in self?.onActivityChange?() }
         pane.onHeaderDrag = { [weak self] pane, phase, point in self?.headerDrag(pane, phase, point) }
         pane.onExit = { [weak self] in self?.remove($0) }
         pane.isBroadcasting = broadcasting
@@ -560,7 +594,7 @@ final class GridView: NSView {
         // The zoomed pane draws above its neighbours while it grows.
         if let zoomed { addSubview(zoomed, positioned: .above, relativeTo: nil) }
         for pane in panes {
-            pane.terminal?.setSurfaceVisible(zoomed == nil || pane === zoomed)
+            pane.terminal?.setSurfaceVisible(isShowing && (zoomed == nil || pane === zoomed))
         }
 
         guard let curve else {
