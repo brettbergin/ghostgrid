@@ -14,8 +14,9 @@ With Homebrew (signed and notarized; Apple silicon, macOS 14+):
 brew install --cask brettbergin/tap/ghostgrid
 ```
 
-The cask installs the app only; `gg` comes with `make install`. Or download
-the DMG from the [releases](https://github.com/brettbergin/ghostgrid/releases).
+From 0.1.1 the cask also puts `gg` on PATH (the copy bundled in the app at
+`Contents/Resources/bin/gg`, which opens the app it is in). Or download the
+DMG from the [releases](https://github.com/brettbergin/ghostgrid/releases).
 
 From source:
 
