@@ -47,6 +47,10 @@ PLIST
 for key in $(plutil -convert xml1 -o - Resources/Info.plist | sed -n 's|.*<key>\(NS[A-Za-z]*UsageDescription\)</key>.*|\1|p'); do
   plutil -insert "$key" -string "$(plutil -extract "$key" raw Resources/Info.plist)" "$HELPER/Contents/Info.plist"
 done
+# gg, for the Homebrew cask to link onto PATH (make install copies it to
+# ~/.local/bin instead). It finds the app it is bundled in.
+mkdir -p "$APP/Contents/Resources/bin"
+install -m 0755 Scripts/gg "$APP/Contents/Resources/bin/gg"
 # SwiftPM resource bundles (GhosttyTerminal's shell integration, terminfo).
 # The package looks for them in Contents/Resources.
 cp -R "$BIN"/*.bundle "$APP/Contents/Resources/"

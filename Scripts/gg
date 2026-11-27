@@ -5,14 +5,25 @@
 #   gg a b        one pane per folder
 # Works whether or not ghostgrid is running: macOS hands the folder to the
 # app (application(_:open:)), which adds the pane to its front window.
-# Installed by `make install` to ~/.local/bin/gg.
+# Installed by `make install` to ~/.local/bin/gg, and bundled in the app at
+# Contents/Resources/bin/gg, which the Homebrew cask links onto PATH.
 set -eu
 [ "$#" -gt 0 ] || set -- "$PWD"
 for dir in "$@"; do
   [ -d "$dir" ] || { echo "gg: not a folder: $dir" >&2; exit 1; }
 done
-# The installed app by path: a dev build (build/ghostgrid.app) has the
-# same name and bundle id, and open -a by name may pick it instead.
-APP="${GHOSTGRID_APP:-/Applications/ghostgrid.app}"
-[ -d "$APP" ] || { echo "gg: $APP not found (make install in ~/code/ghostgrid)" >&2; exit 1; }
+# The app by path: a dev build (build/ghostgrid.app) has the same name and
+# bundle id, and open -a by name may pick it instead. The copy bundled in an
+# app (reached through the cask's link) opens that app, wherever it is
+# installed; otherwise /Applications/ghostgrid.app.
+SELF="$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")"
+case "$SELF" in
+*.app/Contents/Resources/bin/gg) BUNDLED="${SELF%/Contents/Resources/bin/gg}" ;;
+*) BUNDLED="" ;;
+esac
+APP="${GHOSTGRID_APP:-${BUNDLED:-/Applications/ghostgrid.app}}"
+[ -d "$APP" ] || {
+  echo "gg: $APP not found (brew install --cask brettbergin/tap/ghostgrid, or make install)" >&2
+  exit 1
+}
 exec open -a "$APP" "$@"
