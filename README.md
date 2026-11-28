@@ -327,6 +327,10 @@ redraw on reattach.
   its last shell and pane are gone.
 - If the helper cannot start, panes fall back to running their shell
   directly (it then ends with the app).
+- If kept shells end when you did not expect it, the log says who asked
+  the helper to stop: each Quit request it declines, and the signal that
+  ends it, is logged with the sending process, its executable and what
+  started it.
 
 ## Session restore
 

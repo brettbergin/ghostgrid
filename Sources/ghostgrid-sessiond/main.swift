@@ -355,13 +355,39 @@ final class Server {
 let server = Server()
 server.listen()
 
-// Say why we stop: a quiet death would look like lost shells.
+/// What is known about the process `pid` now (it may have exited): its
+/// executable and what started it.
+func lookUpSender(_ pid: Int32?) -> QuitSender {
+    guard let pid, pid > 0 else { return QuitSender(pid: nil, path: nil, parentPID: nil, parentPath: nil) }
+    func executable(_ pid: Int32) -> String? {
+        var buffer = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN)) // PROC_PIDPATHINFO_MAXSIZE
+        return proc_pidpath(pid, &buffer, UInt32(buffer.count)) > 0 ? String(cString: buffer) : nil
+    }
+    let path = executable(pid)
+    var info = proc_bsdinfo()
+    let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+    let parent = path != nil && proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size ? Int32(info.pbi_ppid) : nil
+    return QuitSender(pid: pid, path: path, parentPID: parent, parentPath: parent.flatMap(executable))
+}
+
+/// The process that sent the last stopping signal: recorded by the signal
+/// handler (which can do nothing else safely), read by the dispatch source
+/// that runs after it.
+var lastSignalSender: Int32 = 0
+
+// Say why we stop, and who asked: a quiet death would look like lost shells.
 var signalSources: [DispatchSourceSignal] = []
 for number in [SIGTERM, SIGINT, SIGQUIT] {
-    signal(number, SIG_IGN)
+    var action = sigaction()
+    action.__sigaction_u.__sa_sigaction = { _, info, _ in
+        lastSignalSender = info?.pointee.si_pid ?? 0
+    }
+    action.sa_flags = SA_SIGINFO
+    sigemptyset(&action.sa_mask)
+    sigaction(number, &action, nil)
     let source = DispatchSource.makeSignalSource(signal: number, queue: .main)
     source.setEventHandler {
-        log("signal \(number): exiting, ending \(server.sessions.count) shells")
+        log("signal \(number) \(lookUpSender(lastSignalSender)): exiting, ending \(server.sessions.count) shells")
         unlink(socketPath)
         exit(0)
     }
@@ -380,12 +406,13 @@ final class HelperApp: NSObject, NSApplicationDelegate {
         let event = NSAppleEventManager.shared().currentAppleEvent
         let keyword = AEKeyword(HelperQuitPolicy.reasonKeyword)
         let reason = (event?.attributeDescriptor(forKeyword: keyword) ?? event?.paramDescriptor(forKeyword: keyword))?.typeCodeValue
+        let sender = lookUpSender(event?.attributeDescriptor(forKeyword: AEKeyword(keySenderPIDAttr))?.int32Value)
         if HelperQuitPolicy.allowsQuit(reason: reason) {
-            log("quitting for log out, restart or shut down: ending \(server.sessions.count) shells")
+            log("quitting for log out, restart or shut down \(sender): ending \(server.sessions.count) shells")
             unlink(socketPath)
             return .terminateNow
         }
-        log("declined a request to quit (\(server.sessions.count) shells kept)")
+        log("declined a request to quit \(sender) (\(server.sessions.count) shells kept)")
         return .terminateCancel
     }
 }

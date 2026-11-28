@@ -132,6 +132,32 @@
             #expect(late.receive { $0.contains(.failure("no such session")) }.contains(.failure("no such session")))
         }
 
+        /// Stopped by a signal, the helper logs who sent it.
+        @Test func aSignalIsLoggedWithItsSender() throws {
+            let helper = try #require(Self.helper)
+            let socket = "/tmp/gg-test-s-\(getpid()).sock"
+            let log = FileManager.default.temporaryDirectory.appendingPathComponent("gg-sessiond-\(getpid()).log").path
+            defer {
+                unlink(socket)
+                unlink(log)
+            }
+            let daemon = Process()
+            daemon.executableURL = URL(fileURLWithPath: helper)
+            daemon.arguments = ["--socket", socket, "--log", log]
+            daemon.standardError = FileHandle.nullDevice
+            try daemon.run()
+            var client: Client?
+            for _ in 0..<50 where client == nil {
+                usleep(50000)
+                client = Client(socket: socket)
+            }
+            _ = try #require(client, "sessiond did not start listening")
+            kill(daemon.processIdentifier, SIGTERM)
+            daemon.waitUntilExit()
+            let text = try String(contentsOfFile: log, encoding: .utf8)
+            #expect(text.contains("signal 15 from pid \(getpid()) "), "\(text)")
+        }
+
         @Test func aWrongProtocolVersionIsRefused() throws {
             let helper = try #require(Self.helper)
             let socket = "/tmp/gg-test-v-\(getpid()).sock"
