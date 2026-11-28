@@ -165,16 +165,15 @@ with your last shell in the folder you were in; Cmd+1 to Cmd+8 show that
 tab, Cmd+9 the last one, and Cmd+Shift+] / [ (or Ctrl+Tab /
 Ctrl+Shift+Tab) the next and previous.
 
-The tab bar sits in the titlebar beside the traffic lights once there are
-two tabs, or when the only one has a name or color (in full screen, above
-the panes). Tabs share the bar's width and it scrolls when they no longer
-fit.
+The tab bar sits in the titlebar beside the traffic lights (in full
+screen, above the panes), from the first tab on, so that one can be
+renamed, colored and dragged like the rest. Tabs share the bar's width and
+it scrolls when they no longer fit.
 
 - Click a tab to show it; drag it along the bar to move it. Drag it off
   the bar onto another window's tab bar to move it there, or let go
   anywhere else for a window of its own (Tab > Move Tab to New Window does
-  the same). While a tab or pane is dragged, every window shows its bar, so
-  one with a single tab can take it too.
+  the same).
 - Drag a pane by its header onto a tab in any window's bar to move it into
   that tab; the tab comes to the front. A tab whose last pane leaves
   closes, and a window whose last tab leaves closes.
@@ -271,8 +270,8 @@ Shell > Broadcast Input to All Panes (Cmd+Opt+I) sends what you type in the
 focused pane to every other pane of the tab as well: run the same
 command on several hosts, or answer the same prompt everywhere. While it is
 on, every pane header turns red and says BROADCAST, pane borders go red,
-and the window title starts with "BROADCAST:". Press Cmd+Opt+I again to
-stop.
+and the window's title (in the Window menu and Mission Control) starts
+with "BROADCAST:". Press Cmd+Opt+I again to stop.
 
 - Each pane receives the key events themselves, so every program encodes
   them for its own mode (arrow keys in vim, Ctrl+C, pastes).

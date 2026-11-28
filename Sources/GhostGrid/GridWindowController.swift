@@ -55,11 +55,6 @@ final class GridWindowController: NSWindowController, NSWindowDelegate {
     private var barLeading: NSLayoutConstraint?
     /// The bar's constraints to wherever it is mounted (mountTabBar).
     private var barConstraints: [NSLayoutConstraint] = []
-    /// A tab is being renamed: the bar stays visible meanwhile.
-    private var renaming = false
-    /// A tab or pane is being dragged somewhere: every window shows its bar
-    /// so it can be dropped on any of them.
-    private var showingBarForDrag = false
 
     var onClose: ((GridWindowController) -> Void)?
     /// The window, its tabs or a grid changed in a way worth saving.
@@ -173,8 +168,6 @@ final class GridWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func beginRename(at index: Int) {
-        renaming = true
-        updateChrome()
         window?.contentView?.layoutSubtreeIfNeeded()
         tabBar.beginRename(at: index)
     }
@@ -316,7 +309,6 @@ final class GridWindowController: NSWindowController, NSWindowDelegate {
     private func paneDragOver(from tab: WindowTab, at point: NSPoint) -> Bool {
         let target = paneTarget(from: tab, at: point)
         for controller in allWindows?() ?? [self] {
-            controller.showBarForDrag(true)
             let lit = controller === target?.0 ? target.flatMap { t in controller.tabs.tabs.firstIndex { $0 === t.1 } } : nil
             controller.tabBar.paneTarget = lit
         }
@@ -329,7 +321,6 @@ final class GridWindowController: NSWindowController, NSWindowDelegate {
         let target = paneTarget(from: tab, at: point)
         for controller in allWindows?() ?? [self] {
             controller.tabBar.paneTarget = nil
-            controller.showBarForDrag(false)
         }
         guard let (controller, destination) = target else { return false }
         // Out first: the tab (and window) it leaves may close, ending nothing.
@@ -341,13 +332,6 @@ final class GridWindowController: NSWindowController, NSWindowDelegate {
         controller.tabsChanged()
         controller.window?.makeKeyAndOrderFront(nil)
         return true
-    }
-
-    /// Shows the bar while something is dragged (see showingBarForDrag).
-    func showBarForDrag(_ show: Bool) {
-        guard show != showingBarForDrag else { return }
-        showingBarForDrag = show
-        updateChrome()
     }
 
     private func removeTab(at index: Int, endShells: Bool) {
@@ -404,15 +388,12 @@ final class GridWindowController: NSWindowController, NSWindowDelegate {
             onTearOff?(self, index, point)
         }
         tabBar.onDragOutChange = { [weak self] dragging in
-            guard let self else { return }
-            for controller in allWindows?() ?? [self] { controller.showBarForDrag(dragging) }
             // Its last tab went to another window during the drag.
-            if !dragging { closeIfEmpty() }
+            if !dragging { self?.closeIfEmpty() }
         }
     }
 
     private func finishRename() {
-        renaming = false
         tabsChanged()
         grid?.focusCurrent()
     }
@@ -428,15 +409,12 @@ final class GridWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
-    /// The bar shows with two or more tabs (or a named or colored one, or
-    /// while renaming), in the titlebar beside the traffic lights; in full
-    /// screen, where there is no titlebar, above the panes.
+    /// The bar shows whenever the window has a tab, in the titlebar beside
+    /// the traffic lights; in full screen, where there is no titlebar, above
+    /// the panes.
     private func updateChrome() {
         guard let window else { return }
-        let only = tabs.tabs.count == 1 ? tabs.tabs.first : nil
-        let customized = only.map { $0.name != nil || $0.color != nil } ?? false
-        let visible = renaming || (showingBarForDrag && !tabs.isEmpty)
-            || TabBarLayout.shows(count: tabs.count, onlyTabCustomized: customized)
+        let visible = TabBarLayout.shows(count: tabs.count)
         tabBar.isHidden = !visible
         // The title would sit under the tabs.
         window.titleVisibility = visible ? .hidden : .visible

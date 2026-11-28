@@ -202,10 +202,10 @@ public struct TabBarLayout: Sendable {
         y < -tearOffDistance || y > height + tearOffDistance
     }
 
-    /// The bar shows with two or more tabs, or with a single tab you named
-    /// or colored (so the name or color is visible).
-    public static func shows(count: Int, onlyTabCustomized: Bool) -> Bool {
-        count > 1 || (count == 1 && onlyTabCustomized)
+    /// The bar shows whenever the window has a tab, so the first tab can be
+    /// renamed, colored and dragged like any other.
+    public static func shows(count: Int) -> Bool {
+        count > 0
     }
 }
 

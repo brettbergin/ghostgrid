@@ -81,8 +81,9 @@ struct KeymapTests {
 
 /// Contract for the tab bar's layout: tabs share the bar evenly between a
 /// minimum and maximum width; past what fits at the minimum, the bar scrolls.
-/// A dragged tab lands in the slot nearest its middle. The bar shows with
-/// two or more tabs, or with one you named or colored.
+/// A dragged tab lands in the slot nearest its middle. The bar shows
+/// whenever the window has a tab, so the first tab can be renamed, colored
+/// and dragged like any other.
 struct TabBarLayoutTests {
     let layout = TabBarLayout(minimumWidth: 100, maximumWidth: 200, spacing: 4)
 
@@ -114,11 +115,10 @@ struct TabBarLayoutTests {
         #expect(layout.dropIndex(forMiddle: -50, count: 3, width: 460) == 0)
     }
 
-    @Test func theBarShowsWithTwoTabsOrACustomizedOne() {
-        #expect(!TabBarLayout.shows(count: 1, onlyTabCustomized: false))
-        #expect(TabBarLayout.shows(count: 1, onlyTabCustomized: true))
-        #expect(TabBarLayout.shows(count: 2, onlyTabCustomized: false))
-        #expect(!TabBarLayout.shows(count: 0, onlyTabCustomized: false))
+    @Test func theBarShowsWhenTheWindowHasATab() {
+        #expect(TabBarLayout.shows(count: 1), "a single plain tab has its bar too")
+        #expect(TabBarLayout.shows(count: 2))
+        #expect(!TabBarLayout.shows(count: 0))
     }
 }
 
