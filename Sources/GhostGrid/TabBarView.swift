@@ -78,6 +78,15 @@ final class TabBarView: NSView, NSTextFieldDelegate, NSDraggingSource {
 
     override var isFlipped: Bool { true }
 
+    /// The window server moves the window for a press anywhere in a view
+    /// that allows it, tabs included, before the app sees the drag; the bar
+    /// moves the window itself instead (mouseDown).
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    /// A press in an inactive window's bar is a press, not just activation
+    /// (otherwise the window server takes it and moves the window).
+    override func acceptsFirstMouse(for _: NSEvent?) -> Bool { true }
+
     /// The bar covers the titlebar, so its empty space acts as one: drag it
     /// to move the window, double-click it for the titlebar double-click
     /// action in System Settings (zoom unless set otherwise).
@@ -440,7 +449,25 @@ final class TabItemView: NSView {
     fileprivate weak var bar: TabBarView?
     fileprivate var index = 0
     var item = TabBarView.Item(id: UUID(), title: "", selected: false) {
-        didSet { if item != oldValue { restyle() } }
+        didSet {
+            // Another tab now in this slot (after a move): hover is about
+            // where the pointer is now, not where it was.
+            if item.id != oldValue.id { hovering = pointerInside }
+            if item != oldValue { restyle() }
+        }
+    }
+
+    private var pointerInside: Bool {
+        guard let window else { return false }
+        return bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil))
+    }
+
+    /// Moving under or away from a still pointer sends no enter or exit, so
+    /// hover follows the tab's place (frames are set to where they end up,
+    /// even while animating there).
+    override func setFrameOrigin(_ newOrigin: NSPoint) {
+        super.setFrameOrigin(newOrigin)
+        hovering = pointerInside
     }
     /// A dragged pane would move to this tab.
     var isPaneTarget = false {
@@ -480,6 +507,8 @@ final class TabItemView: NSView {
 
     override var isFlipped: Bool { true }
     override var mouseDownCanMoveWindow: Bool { false }
+    /// Grabbing a tab in an inactive window drags the tab (see TabBarView).
+    override func acceptsFirstMouse(for _: NSEvent?) -> Bool { true }
 
     /// The tab takes every click on it except on its close button. The
     /// title is a label, and a label in the titlebar lets a press move the

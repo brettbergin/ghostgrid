@@ -51,8 +51,10 @@ final class GridWindowController: NSWindowController, NSWindowDelegate {
     private let gridArea = NSView()
     private let tabBar = TabBarView()
     private var gridTop: NSLayoutConstraint!
-    private var barHeight: NSLayoutConstraint!
-    private var barLeading: NSLayoutConstraint!
+    private var barHeight: NSLayoutConstraint?
+    private var barLeading: NSLayoutConstraint?
+    /// The bar's constraints to wherever it is mounted (mountTabBar).
+    private var barConstraints: [NSLayoutConstraint] = []
     /// A tab is being renamed: the bar stays visible meanwhile.
     private var renaming = false
     /// A tab or pane is being dragged somewhere: every window shows its bar
@@ -98,19 +100,12 @@ final class GridWindowController: NSWindowController, NSWindowDelegate {
         gridArea.translatesAutoresizingMaskIntoConstraints = false
         tabBar.translatesAutoresizingMaskIntoConstraints = false
         glass.addSubview(gridArea)
-        glass.addSubview(tabBar)
         gridTop = gridArea.topAnchor.constraint(equalTo: glass.safeAreaLayoutGuide.topAnchor)
-        barHeight = tabBar.heightAnchor.constraint(equalToConstant: 28)
-        barLeading = tabBar.leadingAnchor.constraint(equalTo: glass.leadingAnchor, constant: 80)
         NSLayoutConstraint.activate([
             gridTop,
             gridArea.leadingAnchor.constraint(equalTo: glass.leadingAnchor),
             gridArea.trailingAnchor.constraint(equalTo: glass.trailingAnchor),
             gridArea.bottomAnchor.constraint(equalTo: glass.bottomAnchor),
-            tabBar.bottomAnchor.constraint(equalTo: gridArea.topAnchor),
-            tabBar.trailingAnchor.constraint(equalTo: glass.trailingAnchor, constant: -8),
-            barHeight,
-            barLeading,
         ])
 
         super.init(window: window)
@@ -451,9 +446,43 @@ final class GridWindowController: NSWindowController, NSWindowDelegate {
             buttonsMaxX: window.standardWindowButton(.zoomButton)?.frame.maxX ?? 68,
             visible: visible,
         )
-        barHeight.constant = placed.barHeight
+        mountTabBar(inTitlebar: !(window.styleMask.contains(.fullScreen) || enteringFullScreen))
+        barHeight?.constant = placed.barHeight
         gridTop.constant = placed.gridTop
-        barLeading.constant = placed.leading
+        barLeading?.constant = placed.leading
+    }
+
+    /// Puts the bar in the titlebar's own views in a window, and above the
+    /// panes in full screen (where the titlebar is hidden). In the titlebar,
+    /// it must be one of the titlebar's views: macOS lets a press anywhere in
+    /// the titlebar move the window unless a titlebar view says otherwise,
+    /// and a view of the window's content under a transparent titlebar is
+    /// not asked, so dragging a tab dragged the window.
+    private func mountTabBar(inTitlebar: Bool) {
+        guard let window, let content = window.contentView else { return }
+        let titlebar = inTitlebar ? window.standardWindowButton(.closeButton)?.superview : nil
+        let parent = titlebar ?? content
+        guard tabBar.superview !== parent else { return }
+        NSLayoutConstraint.deactivate(barConstraints)
+        tabBar.removeFromSuperview()
+        tabBar.translatesAutoresizingMaskIntoConstraints = false
+        parent.addSubview(tabBar)
+        let leading = tabBar.leadingAnchor.constraint(equalTo: parent.leadingAnchor)
+        let trailing = tabBar.trailingAnchor.constraint(equalTo: parent.trailingAnchor, constant: -8)
+        if let titlebar {
+            barHeight = nil
+            barConstraints = [
+                leading, trailing,
+                tabBar.topAnchor.constraint(equalTo: titlebar.topAnchor),
+                tabBar.bottomAnchor.constraint(equalTo: titlebar.bottomAnchor),
+            ]
+        } else {
+            let height = tabBar.heightAnchor.constraint(equalToConstant: TabBarPlacement.fullScreenHeight)
+            barHeight = height
+            barConstraints = [leading, trailing, height, tabBar.bottomAnchor.constraint(equalTo: gridArea.topAnchor)]
+        }
+        barLeading = leading
+        NSLayoutConstraint.activate(barConstraints)
     }
 
     private func updateTitle() {
