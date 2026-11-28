@@ -16,7 +16,23 @@ pub fn temp_dir(label: &str) -> PathBuf {
         NEXT.fetch_add(1, Ordering::SeqCst)
     ));
     std::fs::create_dir_all(&dir).expect("create temp dir");
-    dir
+    long_path(dir)
+}
+
+/// The folder's full long-name path. TEMP can be an 8.3 short path (GitHub's
+/// Windows runners: `C:\Users\RUNNER~1\...`), while shells report the long
+/// one (`C:\Users\runneradmin\...`), so tests compare against the long form.
+fn long_path(dir: PathBuf) -> PathBuf {
+    match std::fs::canonicalize(&dir) {
+        Ok(full) => {
+            let text = full.display().to_string();
+            match text.strip_prefix(r"\\?\") {
+                Some(plain) if !plain.starts_with("UNC\\") => PathBuf::from(plain),
+                _ => full,
+            }
+        }
+        Err(_) => dir,
+    }
 }
 
 /// A temporary directory holding `files` (relative path, contents).
