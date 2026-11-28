@@ -52,13 +52,15 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
+      # The workspace's rust-version: newer clippy lints would fail
+      # `-D warnings` without any change here.
       - name: Toolchain
         run: |
+          rustup toolchain install 1.86.0 --profile minimal --component clippy
+          rustup default 1.86.0
           node --version
           rustc --version
           cargo --version
-      - name: Clippy
-        run: rustup component add clippy
       - name: npm ci
         run: npm ci
       - name: build.ps1 check

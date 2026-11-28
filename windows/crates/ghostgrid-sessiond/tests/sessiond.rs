@@ -639,12 +639,22 @@ async fn the_same_user_is_admitted_and_the_dacl_names_only_the_user_and_system()
     for ace in &aces {
         assert!(ace.starts_with("A;"), "not an allow ACE: {ace} in {sddl}");
         let trustee = ace.rsplit(';').next().unwrap_or_default();
-        assert!(trustee == user || trustee == "SY", "unexpected trustee {trustee} in {sddl}");
+        assert!(is_user(trustee, &user) || trustee == "SY", "unexpected trustee {trustee} in {sddl}");
     }
-    assert!(aces.iter().any(|a| a.ends_with(&format!(";{user}"))), "the user is not admitted: {sddl}");
+    assert!(
+        aces.iter().any(|a| is_user(a.rsplit(';').next().unwrap_or_default(), &user)),
+        "the user is not admitted: {sddl}"
+    );
     for outsider in ["WD", "AN", "BU", "AU", "IU", "NU", "BG"] {
         assert!(!aces.iter().any(|a| a.ends_with(&format!(";{outsider}"))), "{outsider} is admitted: {sddl}");
     }
+}
+
+/// Whether an SDDL trustee is the current user. SDDL writes the built-in
+/// local Administrator and Guest by their aliases (LA, LG) instead of their
+/// SIDs (RID 500 and 501): GitHub's Windows runners run as the former.
+fn is_user(trustee: &str, user: &str) -> bool {
+    trustee == user || (trustee == "LA" && user.ends_with("-500")) || (trustee == "LG" && user.ends_with("-501"))
 }
 
 /// The DACL of the pipe behind `pipe` as SDDL.
