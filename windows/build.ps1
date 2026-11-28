@@ -1,4 +1,6 @@
-# ghostgrid for Windows: the Makefile's counterpart.
+# ghostgrid for Windows: the Makefile's counterpart. Run it as build.cmd
+# <task> (from PowerShell, cmd or Explorer, past the execution policy), or
+# as .\build.ps1 <task> in PowerShell where scripts are allowed.
 #
 #   .\build.ps1 run       # dev build with hot reload (tauri dev)
 #   .\build.ps1 test      # unit tests: TypeScript (vitest) and Rust (cargo test)
