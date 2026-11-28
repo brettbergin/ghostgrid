@@ -1,0 +1,32 @@
+[package]
+name = "ghostgrid"
+description = "A Windows terminal where each tab is an animated, auto-balanced grid of panes."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "ghostgrid_app"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+ghostgrid-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+portable-pty.workspace = true
+tokio.workspace = true
+tauri = { version = "2", features = [] }
+tauri-plugin-single-instance = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-updater = "2"
+url = "2"
+ureq = { version = "3", default-features = false, features = ["native-tls"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true
+ghostgrid-sessiond = { path = "../crates/ghostgrid-sessiond" }

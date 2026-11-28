@@ -1,5 +1,8 @@
 # Runs `make check` (tests, the app bundle, shellcheck) on GitHub's macOS
-# runners for every pull request and every push to main.
+# runners, and `windows/build.ps1 check` (typecheck, vitest, cargo test,
+# clippy, the release exe) plus the NSIS installer on GitHub's Windows
+# runners, for every pull request and every push to main. The Windows job
+# uploads ghostgrid.exe and the installer as a build artifact.
 #
 # Pull requests from forks run here with a read-only token and no secrets:
 # the workflow uses `pull_request` (never `pull_request_target`), signs
@@ -36,3 +39,43 @@ jobs:
         run: command -v shellcheck || brew install shellcheck
       - name: make check
         run: make check
+
+  windows:
+    name: build.ps1 check (Windows)
+    runs-on: windows-2025
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: windows
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      # The workspace's rust-version: newer clippy lints would fail
+      # `-D warnings` without any change here.
+      - name: Toolchain
+        run: |
+          rustup toolchain install 1.86.0 --profile minimal --component clippy
+          rustup default 1.86.0
+          node --version
+          rustc --version
+          cargo --version
+      - name: npm ci
+        run: npm ci
+      - name: build.ps1 check
+        run: ./build.ps1 check
+      # The exe check built, then the NSIS installer around it (unsigned; a
+      # release signs it with build.ps1 release on a machine with the keys).
+      - name: Installer
+        run: npx tauri build
+      - name: Upload ghostgrid.exe and the installer
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: ghostgrid-windows-${{ github.sha }}
+          path: |
+            windows/target/release/ghostgrid.exe
+            windows/target/release/ghostgrid-sessiond.exe
+            windows/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,16 @@
+[package]
+name = "ghostgrid-sessiond"
+description = "Owns every ghostgrid pane's shell (ConPTY) so shells keep running when the app quits."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+ghostgrid-core.workspace = true
+portable-pty.workspace = true
+tokio.workspace = true
+serde_json.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true
