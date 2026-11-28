@@ -1,0 +1,45 @@
+# ghostgrid for Windows: the Tauri app (src-tauri), the platform-neutral core
+# (crates/ghostgrid-core, unit tested) and the session helper that owns every
+# pane's shell (crates/ghostgrid-sessiond).
+[workspace]
+resolver = "3"
+members = ["src-tauri", "crates/ghostgrid-core", "crates/ghostgrid-sessiond"]
+
+[workspace.package]
+version = "0.3.1"
+edition = "2021"
+rust-version = "1.86"
+license = "MIT"
+
+[workspace.dependencies]
+ghostgrid-core = { path = "crates/ghostgrid-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+portable-pty = "0.9"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time"] }
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_System_Threading",
+  "Win32_System_Pipes",
+  "Win32_System_ProcessStatus",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_System_Registry",
+  "Win32_Storage_FileSystem",
+  "Win32_System_DataExchange",
+  "Win32_System_Memory",
+  "Win32_System_Ole",
+  "Win32_Graphics_Gdi",
+  "Win32_System_RemoteDesktop",
+] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

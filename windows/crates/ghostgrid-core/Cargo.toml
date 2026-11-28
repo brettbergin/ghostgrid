@@ -1,0 +1,11 @@
+[package]
+name = "ghostgrid-core"
+description = "ghostgrid's platform-neutral logic: session wire protocol, output history, command blocks, Ghostty config, shells, session model, explain."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
