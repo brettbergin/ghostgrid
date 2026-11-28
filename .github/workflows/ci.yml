@@ -63,8 +63,10 @@ jobs:
           cargo --version
       - name: npm ci
         run: npm ci
+      # Through build.cmd, as people run it, so the wrapper is tested too.
+      # (The job keeps its name: it is a required check on main.)
       - name: build.ps1 check
-        run: ./build.ps1 check
+        run: ./build.cmd check
       # The exe check built, then the NSIS installer around it (unsigned; a
       # release signs it with build.ps1 release on a machine with the keys).
       - name: Installer

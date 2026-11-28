@@ -11,7 +11,7 @@ opacity and shaders match your Ghostty.
 ghostgrid also runs on Windows 10 and 11, with the same grids, tabs, kept
 shells, command blocks and explain panel, built on Tauri and xterm.js
 instead of libghostty and with Ctrl+Shift / Ctrl+Alt shortcuts in place of
-Cmd. Its code, build (`windows\build.ps1`) and documentation are in
+Cmd. Its code, build (`windows\build.cmd`) and documentation are in
 [windows/README.md](windows/README.md). The rest of this file describes the
 macOS app.
 

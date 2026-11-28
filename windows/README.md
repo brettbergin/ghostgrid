@@ -41,7 +41,7 @@ From source:
 
 ```powershell
 cd windows
-.\build.ps1 install   # build the installer and install it for this user
+.\build.cmd install   # build the installer and install it for this user
 ```
 
 `install` refuses while ghostgrid is running (quit it with Ctrl+Shift+Q
@@ -51,18 +51,25 @@ first) and does not put `gg` on PATH; use Settings for that.
 
 Needs Node.js with npm, Rust 1.86+ with the MSVC toolchain (Visual Studio
 Build Tools with C++, Tauri's Windows prerequisite) and WebView2 (part of
-Windows 11). Everything runs from `windows\`:
+Windows 11). Everything runs from `windows\` through `build.cmd`, which
+works the same from PowerShell, cmd and Explorer:
 
 ```powershell
-.\build.ps1 run        # dev build with hot reload (tauri dev)
-.\build.ps1 test       # vitest (TypeScript core) and cargo test (Rust workspace)
-.\build.ps1 app        # release build: target\release\ghostgrid.exe, no installer
-.\build.ps1 check      # typecheck, tests, clippy -D warnings, release app (what CI runs)
-.\build.ps1 installer  # NSIS installer in target\release\bundle\nsis\
-.\build.ps1 install    # build the installer and run it silently for this user
-.\build.ps1 release    # signed installer and update feed (see Releases)
-.\build.ps1 clean      # remove target, dist, node_modules and generated files
+.\build.cmd run        # dev build with hot reload (tauri dev)
+.\build.cmd test       # vitest (TypeScript core) and cargo test (Rust workspace)
+.\build.cmd app        # release build: target\release\ghostgrid.exe, no installer
+.\build.cmd check      # typecheck, tests, clippy -D warnings, release app (what CI runs)
+.\build.cmd installer  # NSIS installer in target\release\bundle\nsis\
+.\build.cmd install    # build the installer and run it silently for this user
+.\build.cmd release    # signed installer and update feed (see Releases)
+.\build.cmd clean      # remove target, dist, node_modules and generated files
 ```
+
+The tasks live in `build.ps1`. Started directly, a `.ps1` opens in Notepad
+from cmd and Explorer, and PowerShell's default execution policy can
+refuse to run it; `build.cmd` starts it with `-ExecutionPolicy Bypass`
+(PowerShell 7 when installed, else Windows PowerShell). Inside PowerShell,
+`.\build.ps1 <task>` works too where scripts are allowed.
 
 Each build first runs `scripts/prepare.mjs`, which builds
 `ghostgrid-sessiond` and puts it where Tauri bundles sidecars
