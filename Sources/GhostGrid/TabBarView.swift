@@ -481,6 +481,15 @@ final class TabItemView: NSView {
     override var isFlipped: Bool { true }
     override var mouseDownCanMoveWindow: Bool { false }
 
+    /// The tab takes every click on it except on its close button. The
+    /// title is a label, and a label in the titlebar lets a press move the
+    /// window: the window server asks the view under the pointer, so
+    /// dragging a tab by its title dragged the window instead.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let hit = super.hitTest(point) else { return nil }
+        return hit === closeButton ? hit : self
+    }
+
     override func layout() {
         super.layout()
         let side: CGFloat = 16
