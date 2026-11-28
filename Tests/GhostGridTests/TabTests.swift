@@ -170,3 +170,31 @@ struct TabActivityTests {
         #expect(TabActivity.badge(for: [nil, failed, alsoFailed]) == failed)
     }
 }
+
+/// Contract for a tab arriving from elsewhere (dragged from another window,
+/// or out to a new one): it goes in at the slot it was dropped on and is
+/// selected; a slot past the end is the end.
+struct TabStripInsertTests {
+    @Test func anArrivingTabGoesInAtItsSlotAndIsSelected() {
+        var strip = TabStrip(["a", "b", "c"], selected: 2)
+        strip.insert("new", at: 1)
+        #expect(strip.tabs == ["a", "new", "b", "c"])
+        #expect(strip.selectedTab == "new")
+    }
+
+    @Test func slotsPastEitherEndAreTheEnds() {
+        var strip = TabStrip(["a", "b"], selected: 0)
+        strip.insert("end", at: 99)
+        #expect(strip.tabs == ["a", "b", "end"])
+        strip.insert("start", at: -3)
+        #expect(strip.tabs == ["start", "a", "b", "end"])
+        #expect(strip.selectedTab == "start")
+    }
+
+    @Test func aTabArrivingInAnEmptyStripIsTheOnlyOne() {
+        var strip = TabStrip<String>([])
+        strip.insert("a", at: 3)
+        #expect(strip.tabs == ["a"])
+        #expect(strip.selectedTab == "a")
+    }
+}

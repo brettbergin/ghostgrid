@@ -27,6 +27,8 @@ final class GridWindow: NSWindow {
 /// One tab: its own grid of panes, and the name and color you gave it.
 @MainActor
 final class WindowTab {
+    /// Names the tab while it is dragged between windows.
+    let id = UUID()
     let grid: GridView
     var name: String?
     var color: TabColor?
@@ -49,14 +51,24 @@ final class GridWindowController: NSWindowController, NSWindowDelegate {
     private let gridArea = NSView()
     private let tabBar = TabBarView()
     private var gridTop: NSLayoutConstraint!
-    private var barHeight: NSLayoutConstraint!
-    private var barLeading: NSLayoutConstraint!
+    private var barHeight: NSLayoutConstraint?
+    private var barLeading: NSLayoutConstraint?
+    /// The bar's constraints to wherever it is mounted (mountTabBar).
+    private var barConstraints: [NSLayoutConstraint] = []
     /// A tab is being renamed: the bar stays visible meanwhile.
     private var renaming = false
+    /// A tab or pane is being dragged somewhere: every window shows its bar
+    /// so it can be dropped on any of them.
+    private var showingBarForDrag = false
 
     var onClose: ((GridWindowController) -> Void)?
     /// The window, its tabs or a grid changed in a way worth saving.
     var onChange: (() -> Void)?
+    /// Every window, front to back (where dragged tabs and panes can go).
+    var allWindows: (() -> [GridWindowController])?
+    /// A tab was dragged out of every tab bar and dropped at a screen point:
+    /// it moves to a new window there.
+    var onTearOff: ((GridWindowController, Int, NSPoint?) -> Void)?
 
     /// The grid of the tab in front (nil only while the window has no tab).
     var grid: GridView? { tabs.selectedTab?.grid }
@@ -88,19 +100,12 @@ final class GridWindowController: NSWindowController, NSWindowDelegate {
         gridArea.translatesAutoresizingMaskIntoConstraints = false
         tabBar.translatesAutoresizingMaskIntoConstraints = false
         glass.addSubview(gridArea)
-        glass.addSubview(tabBar)
         gridTop = gridArea.topAnchor.constraint(equalTo: glass.safeAreaLayoutGuide.topAnchor)
-        barHeight = tabBar.heightAnchor.constraint(equalToConstant: 28)
-        barLeading = tabBar.leadingAnchor.constraint(equalTo: glass.leadingAnchor, constant: 80)
         NSLayoutConstraint.activate([
             gridTop,
             gridArea.leadingAnchor.constraint(equalTo: glass.leadingAnchor),
             gridArea.trailingAnchor.constraint(equalTo: glass.trailingAnchor),
             gridArea.bottomAnchor.constraint(equalTo: glass.bottomAnchor),
-            tabBar.bottomAnchor.constraint(equalTo: gridArea.topAnchor),
-            tabBar.trailingAnchor.constraint(equalTo: glass.trailingAnchor, constant: -8),
-            barHeight,
-            barLeading,
         ])
 
         super.init(window: window)
@@ -202,6 +207,13 @@ final class GridWindowController: NSWindowController, NSWindowDelegate {
         ])
         grid.isShowing = false // until it is brought to the front
         window?.contentView?.layoutSubtreeIfNeeded()
+        wire(tab)
+        return tab
+    }
+
+    /// Points a tab's grid at this window (again, when it moved here).
+    private func wire(_ tab: WindowTab) {
+        let grid = tab.grid
         grid.onChange = { [weak self] in self?.onChange?() }
         // The tab's last pane closed (its shell already ended).
         grid.onEmpty = { [weak self, weak tab] in
@@ -215,7 +227,127 @@ final class GridWindowController: NSWindowController, NSWindowDelegate {
             if let self, tab === tabs.selectedTab { updateTitle() }
         }
         grid.onActivityChange = { [weak self] in self?.refreshBar() }
+        grid.onPaneDragOver = { [weak self, weak tab] _, point in
+            guard let self, let tab else { return false }
+            return paneDragOver(from: tab, at: point)
+        }
+        grid.onPaneDrop = { [weak self, weak tab] pane, point in
+            guard let self, let tab else { return false }
+            return paneDrop(pane, from: tab, at: point)
+        }
+    }
+
+    // MARK: - Moving tabs and panes between tabs and windows
+
+    /// Takes a tab out of this window, its shells still running, for another
+    /// window to take in. The window stays open until `closeIfEmpty`.
+    func detachTab(at index: Int) -> WindowTab? {
+        guard let tab = tabs.close(at: index) else { return nil }
+        tab.grid.removeFromSuperview()
+        if !tabs.isEmpty {
+            showSelected()
+            tabsChanged()
+        }
         return tab
+    }
+
+    /// Takes in a tab from another window at `index` and brings it to the
+    /// front, with its window.
+    func attachTab(_ tab: WindowTab, at index: Int) {
+        tab.grid.translatesAutoresizingMaskIntoConstraints = false
+        tab.grid.isShowing = false
+        gridArea.addSubview(tab.grid)
+        NSLayoutConstraint.activate([
+            tab.grid.topAnchor.constraint(equalTo: gridArea.topAnchor),
+            tab.grid.leadingAnchor.constraint(equalTo: gridArea.leadingAnchor),
+            tab.grid.trailingAnchor.constraint(equalTo: gridArea.trailingAnchor),
+            tab.grid.bottomAnchor.constraint(equalTo: gridArea.bottomAnchor),
+        ])
+        wire(tab)
+        tabs.insert(tab, at: index)
+        window?.contentView?.layoutSubtreeIfNeeded()
+        showSelected()
+        tabsChanged()
+        window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// A window whose last tab moved elsewhere closes, ending nothing (once
+    /// its own tab drag, if any, is over).
+    func closeIfEmpty() {
+        if tabs.isEmpty, !tabBar.isDraggingOut { window?.close() }
+    }
+
+    /// A tab from any window dropped on this window's bar at `index`.
+    private func acceptTab(id: UUID, at index: Int) {
+        if let own = tabs.tabs.firstIndex(where: { $0.id == id }) {
+            moveTab(from: own, to: min(index, tabs.count - 1))
+            return
+        }
+        guard let source = allWindows?().first(where: { $0.tabs.tabs.contains { $0.id == id } }),
+              let sourceIndex = source.tabs.tabs.firstIndex(where: { $0.id == id }),
+              let tab = source.detachTab(at: sourceIndex)
+        else { return }
+        attachTab(tab, at: index)
+        source.closeIfEmpty()
+    }
+
+    /// Tab > Move Tab to New Window.
+    func moveSelectedTabToNewWindow() {
+        onTearOff?(self, tabs.selected, nil)
+    }
+
+    /// The tab under a screen point in this window's bar, while it shows.
+    private func tabIndex(atScreen point: NSPoint) -> Int? {
+        guard let window, !tabBar.isHidden else { return nil }
+        return tabBar.index(at: tabBar.convert(window.convertPoint(fromScreen: point), from: nil))
+    }
+
+    /// The tab (in any window) a pane dragged to `point` would move to; not
+    /// the tab it is in.
+    private func paneTarget(from tab: WindowTab, at point: NSPoint) -> (GridWindowController, WindowTab)? {
+        for controller in allWindows?() ?? [self] {
+            guard let index = controller.tabIndex(atScreen: point) else { continue }
+            let target = controller.tabs.tabs[index]
+            return target === tab ? nil : (controller, target)
+        }
+        return nil
+    }
+
+    private func paneDragOver(from tab: WindowTab, at point: NSPoint) -> Bool {
+        let target = paneTarget(from: tab, at: point)
+        for controller in allWindows?() ?? [self] {
+            controller.showBarForDrag(true)
+            let lit = controller === target?.0 ? target.flatMap { t in controller.tabs.tabs.firstIndex { $0 === t.1 } } : nil
+            controller.tabBar.paneTarget = lit
+        }
+        return target != nil
+    }
+
+    /// A pane dropped by its header: onto a tab in some window's bar, it
+    /// moves there (its shell still running) and that tab comes to the front.
+    private func paneDrop(_ pane: PaneView, from tab: WindowTab, at point: NSPoint) -> Bool {
+        let target = paneTarget(from: tab, at: point)
+        for controller in allWindows?() ?? [self] {
+            controller.tabBar.paneTarget = nil
+            controller.showBarForDrag(false)
+        }
+        guard let (controller, destination) = target else { return false }
+        // Out first: the tab (and window) it leaves may close, ending nothing.
+        tab.grid.detach(pane)
+        guard let index = controller.tabs.tabs.firstIndex(where: { $0 === destination }) else { return true }
+        controller.tabs.select(at: index)
+        controller.showSelected()
+        destination.grid.adopt(pane)
+        controller.tabsChanged()
+        controller.window?.makeKeyAndOrderFront(nil)
+        return true
+    }
+
+    /// Shows the bar while something is dragged (see showingBarForDrag).
+    func showBarForDrag(_ show: Bool) {
+        guard show != showingBarForDrag else { return }
+        showingBarForDrag = show
+        updateChrome()
     }
 
     private func removeTab(at index: Int, endShells: Bool) {
@@ -266,6 +398,17 @@ final class GridWindowController: NSWindowController, NSWindowDelegate {
             finishRename()
         }
         tabBar.onRenameCancel = { [weak self] in self?.finishRename() }
+        tabBar.onDropTab = { [weak self] id, index in self?.acceptTab(id: id, at: index) }
+        tabBar.onTearOff = { [weak self] index, point in
+            guard let self else { return }
+            onTearOff?(self, index, point)
+        }
+        tabBar.onDragOutChange = { [weak self] dragging in
+            guard let self else { return }
+            for controller in allWindows?() ?? [self] { controller.showBarForDrag(dragging) }
+            // Its last tab went to another window during the drag.
+            if !dragging { closeIfEmpty() }
+        }
     }
 
     private func finishRename() {
@@ -278,7 +421,7 @@ final class GridWindowController: NSWindowController, NSWindowDelegate {
         tabBar.items = tabs.tabs.enumerated().map { index, tab in
             let selected = index == tabs.selected
             return TabBarView.Item(
-                title: TabTitle.display(name: tab.name, position: index), name: tab.name, color: tab.color,
+                id: tab.id, title: TabTitle.display(name: tab.name, position: index), name: tab.name, color: tab.color,
                 selected: selected,
                 badge: selected ? nil : TabActivity.badge(for: tab.grid.activities, since: tab.lastSeen),
             )
@@ -292,7 +435,8 @@ final class GridWindowController: NSWindowController, NSWindowDelegate {
         guard let window else { return }
         let only = tabs.tabs.count == 1 ? tabs.tabs.first : nil
         let customized = only.map { $0.name != nil || $0.color != nil } ?? false
-        let visible = renaming || TabBarLayout.shows(count: tabs.count, onlyTabCustomized: customized)
+        let visible = renaming || (showingBarForDrag && !tabs.isEmpty)
+            || TabBarLayout.shows(count: tabs.count, onlyTabCustomized: customized)
         tabBar.isHidden = !visible
         // The title would sit under the tabs.
         window.titleVisibility = visible ? .hidden : .visible
@@ -302,9 +446,43 @@ final class GridWindowController: NSWindowController, NSWindowDelegate {
             buttonsMaxX: window.standardWindowButton(.zoomButton)?.frame.maxX ?? 68,
             visible: visible,
         )
-        barHeight.constant = placed.barHeight
+        mountTabBar(inTitlebar: !(window.styleMask.contains(.fullScreen) || enteringFullScreen))
+        barHeight?.constant = placed.barHeight
         gridTop.constant = placed.gridTop
-        barLeading.constant = placed.leading
+        barLeading?.constant = placed.leading
+    }
+
+    /// Puts the bar in the titlebar's own views in a window, and above the
+    /// panes in full screen (where the titlebar is hidden). In the titlebar,
+    /// it must be one of the titlebar's views: macOS lets a press anywhere in
+    /// the titlebar move the window unless a titlebar view says otherwise,
+    /// and a view of the window's content under a transparent titlebar is
+    /// not asked, so dragging a tab dragged the window.
+    private func mountTabBar(inTitlebar: Bool) {
+        guard let window, let content = window.contentView else { return }
+        let titlebar = inTitlebar ? window.standardWindowButton(.closeButton)?.superview : nil
+        let parent = titlebar ?? content
+        guard tabBar.superview !== parent else { return }
+        NSLayoutConstraint.deactivate(barConstraints)
+        tabBar.removeFromSuperview()
+        tabBar.translatesAutoresizingMaskIntoConstraints = false
+        parent.addSubview(tabBar)
+        let leading = tabBar.leadingAnchor.constraint(equalTo: parent.leadingAnchor)
+        let trailing = tabBar.trailingAnchor.constraint(equalTo: parent.trailingAnchor, constant: -8)
+        if let titlebar {
+            barHeight = nil
+            barConstraints = [
+                leading, trailing,
+                tabBar.topAnchor.constraint(equalTo: titlebar.topAnchor),
+                tabBar.bottomAnchor.constraint(equalTo: titlebar.bottomAnchor),
+            ]
+        } else {
+            let height = tabBar.heightAnchor.constraint(equalToConstant: TabBarPlacement.fullScreenHeight)
+            barHeight = height
+            barConstraints = [leading, trailing, height, tabBar.bottomAnchor.constraint(equalTo: gridArea.topAnchor)]
+        }
+        barLeading = leading
+        NSLayoutConstraint.activate(barConstraints)
     }
 
     private func updateTitle() {

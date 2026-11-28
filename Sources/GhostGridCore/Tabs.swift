@@ -61,6 +61,14 @@ public struct TabStrip<Tab> {
         }
     }
 
+    /// A tab arriving from elsewhere (another window): it goes in at
+    /// `index` (past either end: that end) and is selected.
+    public mutating func insert(_ tab: Tab, at index: Int) {
+        let index = min(max(index, 0), tabs.count)
+        tabs.insert(tab, at: index)
+        selected = index
+    }
+
     public mutating func select(at index: Int) {
         guard tabs.indices.contains(index) else { return }
         selected = index
@@ -176,6 +184,22 @@ public struct TabBarLayout: Sendable {
         let slots = frames(count: count, width: width)
         guard !slots.isEmpty else { return 0 }
         return slots.indices.min { abs(slots[$0].midX - middle) < abs(slots[$1].midX - middle) } ?? 0
+    }
+
+    /// Where a tab dropped from elsewhere goes in a bar of `count` tabs:
+    /// before the first tab whose middle is right of `x`.
+    public func insertIndex(forX x: CGFloat, count: Int, width: CGFloat) -> Int {
+        frames(count: count, width: width).filter { $0.midX < x }.count
+    }
+
+    /// How far above or below the bar the pointer goes before a dragged
+    /// tab leaves it (to another window, or a new one).
+    public static let tearOffDistance: CGFloat = 24
+
+    /// Whether a tab dragged in a bar `height` tall has left it, the pointer
+    /// at `y` (0 at the bar's top, growing downward).
+    public static func leavesBar(y: CGFloat, height: CGFloat) -> Bool {
+        y < -tearOffDistance || y > height + tearOffDistance
     }
 
     /// The bar shows with two or more tabs, or with a single tab you named

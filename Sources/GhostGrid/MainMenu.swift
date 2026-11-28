@@ -43,6 +43,7 @@ enum MainMenu {
             item("Rename Tab...", #selector(AppDelegate.renameTab(_:))),
             colorMenu(),
             .separator(),
+            item("Move Tab to New Window", #selector(AppDelegate.moveTabToOwnWindow(_:))),
             item("Close Other Tabs", #selector(AppDelegate.closeOtherTabs(_:))),
         ] + numbered("Show Tab", #selector(AppDelegate.selectTabNumber(_:)), Keymap.selectTab)))
         menu.addItem(submenu("Pane", [

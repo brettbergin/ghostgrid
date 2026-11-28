@@ -84,6 +84,12 @@ final class GridView: NSView {
     var onTitleChange: ((String) -> Void)?
     /// A pane's badge appeared or cleared (the tab's badge follows).
     var onActivityChange: (() -> Void)?
+    /// A pane dragged by its header is at a screen point: true when a tab
+    /// there would take it (so it is not dropped in this grid).
+    var onPaneDragOver: ((PaneView, NSPoint) -> Bool)?
+    /// A pane dragged by its header was let go at a screen point: true when
+    /// it moved to another tab.
+    var onPaneDrop: ((PaneView, NSPoint) -> Bool)?
 
     /// This grid's tab is the one showing in its window. A tab in the
     /// background keeps its shells running, but its grid is hidden, its
@@ -313,6 +319,45 @@ final class GridView: NSView {
         panes.forEach { $0.endShell() }
     }
 
+    /// Takes `pane` out of this grid with its shell still running: it is
+    /// moving to another tab. The last pane leaving empties the tab.
+    func detach(_ pane: PaneView) {
+        guard let index = panes.firstIndex(of: pane) else { return }
+        panes.remove(at: index)
+        pane.removeFromSuperview()
+        pane.isDropTarget = false
+        weights = nil
+        rows = nil
+        weightsFromAttention = false
+        lastLevels = []
+        if zoomed === pane { zoomed = nil }
+        if focused === pane { focused = nil }
+        onChange?()
+        guard !panes.isEmpty else {
+            onEmpty?()
+            return
+        }
+        apply(targetFrames(), animated: true)
+        panes[max(0, index - 1)].focus()
+    }
+
+    /// Takes in a pane from another tab (see detach), at the end of the
+    /// grid, and focuses it.
+    func adopt(_ pane: PaneView) {
+        wire(pane)
+        pane.isFocusedPane = false
+        zoomed = nil
+        weights = nil
+        rows = nil
+        weightsFromAttention = false
+        lastLevels = []
+        panes.append(pane)
+        addSubview(pane, positioned: .above, relativeTo: nil)
+        apply(targetFrames(), animated: true)
+        pane.focus()
+        onChange?()
+    }
+
     private func remove(_ pane: PaneView) {
         guard let index = panes.firstIndex(of: pane) else { return }
         pane.endShell()
@@ -445,9 +490,12 @@ final class GridView: NSView {
     /// Drag a pane by its header and drop it on another to move it there
     /// (see movePane). The pane follows the pointer; what it would move
     /// aside lights up: the pane under it, or that pane's whole row.
+    /// Dragged onto a tab in any window's tab bar, the pane moves to that
+    /// tab instead (onPaneDragOver / onPaneDrop).
     private func headerDrag(_ pane: PaneView, _ phase: PaneHeaderView.DragPhase, _ windowPoint: NSPoint) {
-        guard zoomed == nil, panes.count > 1, let index = panes.firstIndex(of: pane) else { return }
+        guard zoomed == nil, let index = panes.firstIndex(of: pane) else { return }
         let point = convert(windowPoint, from: nil)
+        let screen = window?.convertPoint(toScreen: windowPoint)
         switch phase {
         case .began:
             dragging = (pane, CGPoint(x: point.x - pane.frame.minX, y: point.y - pane.frame.minY))
@@ -456,7 +504,8 @@ final class GridView: NSView {
         case .moved:
             guard let dragging else { return }
             pane.setFrameOrigin(NSPoint(x: point.x - dragging.grab.x, y: point.y - dragging.grab.y))
-            let target = GridLayout.index(at: point, in: targetFrames(), excluding: index).map { panes[$0] }
+            let overTab = screen.map { onPaneDragOver?(pane, $0) == true } ?? false
+            let target = overTab ? nil : GridLayout.index(at: point, in: targetFrames(), excluding: index).map { panes[$0] }
             if target !== dropTarget {
                 dropTarget = target
                 let lit = target.flatMap { panes.firstIndex(of: $0) }
@@ -472,6 +521,8 @@ final class GridView: NSView {
             dropHighlight.forEach { $0.isDropTarget = false }
             dropHighlight = []
             dropTarget = nil
+            // Moved to another tab: it is no longer this grid's.
+            if let screen, onPaneDrop?(pane, screen) == true { return }
             if let target {
                 movePane(index, onto: target)
             } else {

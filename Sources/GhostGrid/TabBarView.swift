@@ -7,8 +7,9 @@ import GhostGridCore
 /// bar's width (TabBarLayout); when they no longer fit, the bar scrolls.
 /// Empty space in the bar still drags (and double-click zooms) the window.
 @MainActor
-final class TabBarView: NSView, NSTextFieldDelegate {
+final class TabBarView: NSView, NSTextFieldDelegate, NSDraggingSource {
     struct Item: Equatable {
+        var id: UUID
         var title: String
         /// The name you gave the tab (what renaming starts from).
         var name: String?
@@ -33,6 +34,21 @@ final class TabBarView: NSView, NSTextFieldDelegate {
     /// A rename was cancelled (Escape).
     var onRenameCancel: (() -> Void)?
     var onColor: ((Int, TabColor?) -> Void)?
+    /// A tab (from this window or another) was dropped on the bar at a slot.
+    var onDropTab: ((UUID, Int) -> Void)?
+    /// A tab dragged out of the bar was let go outside every tab bar, at a
+    /// screen point.
+    var onTearOff: ((Int, NSPoint) -> Void)?
+    /// A tab started or stopped being dragged out of the bar.
+    var onDragOutChange: ((Bool) -> Void)?
+
+    /// The tab a dragged pane would move to (lit up).
+    var paneTarget: Int? {
+        didSet {
+            guard paneTarget != oldValue else { return }
+            for (index, view) in views.enumerated() { view.isPaneTarget = index == paneTarget }
+        }
+    }
 
     private var views: [TabItemView] = []
     /// How far the tabs are scrolled, when they are wider than the bar.
@@ -40,6 +56,10 @@ final class TabBarView: NSView, NSTextFieldDelegate {
     /// A press on a tab, and once it moved far enough, the drag.
     private var press: (index: Int, x: CGFloat)?
     private var drag: (index: Int, grab: CGFloat, target: Int)?
+    /// The tab being dragged out of the bar (its slot closes up).
+    private var outgoing: Int?
+    /// Where a tab dragged over the bar would go (the others make room).
+    private var incoming: Int?
     private var editor: NSTextField?
     private var editing: Int?
     private var cancelled = false
@@ -48,6 +68,7 @@ final class TabBarView: NSView, NSTextFieldDelegate {
         super.init(frame: .zero)
         // Scrolled tabs must not draw over the traffic lights.
         clipsToBounds = true
+        registerForDraggedTypes([.ghostgridTab])
     }
 
     @available(*, unavailable)
@@ -56,6 +77,15 @@ final class TabBarView: NSView, NSTextFieldDelegate {
     }
 
     override var isFlipped: Bool { true }
+
+    /// The window server moves the window for a press anywhere in a view
+    /// that allows it, tabs included, before the app sees the drag; the bar
+    /// moves the window itself instead (mouseDown).
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    /// A press in an inactive window's bar is a press, not just activation
+    /// (otherwise the window server takes it and moves the window).
+    override func acceptsFirstMouse(for _: NSEvent?) -> Bool { true }
 
     /// The bar covers the titlebar, so its empty space acts as one: drag it
     /// to move the window, double-click it for the titlebar double-click
@@ -117,17 +147,21 @@ final class TabBarView: NSView, NSTextFieldDelegate {
         return CGRect(x: slot.minX - scroll, y: ((bounds.height - height) / 2).rounded(), width: slot.width, height: height)
     }
 
-    /// Puts each tab in its slot; while one is dragged, the others make
-    /// room where it would land.
+    /// Puts each tab in its slot. While one is dragged along the bar, the
+    /// others make room where it would land; one dragged out leaves its slot;
+    /// one dragged in from elsewhere gets a gap where it would go.
     private func place(animated: Bool) {
-        let slots = Self.layout.frames(count: views.count, width: bounds.width)
-        var order = Array(views.indices)
+        var order: [Int?] = Array(views.indices)
         if let drag {
             order.remove(at: drag.index)
             order.insert(drag.index, at: drag.target)
         }
+        if let outgoing { order.removeAll { $0 == outgoing } }
+        if let incoming { order.insert(nil, at: min(incoming, order.count)) }
+        let slots = Self.layout.frames(count: order.count, width: bounds.width)
         let update = {
-            for (slot, index) in zip(slots, order) where index != self.drag?.index {
+            for (slot, index) in zip(slots, order) {
+                guard let index, index != self.drag?.index else { continue }
                 let view = self.views[index]
                 (animated ? view.animator() : view).frame = self.itemFrame(slot)
             }
@@ -173,6 +207,12 @@ final class TabBarView: NSView, NSTextFieldDelegate {
         }
         guard var drag else { return }
         let dragged = views[drag.index]
+        // Well above or below the bar: the tab leaves it, for another
+        // window's bar or a window of its own.
+        if TabBarLayout.leavesBar(y: convert(event.locationInWindow, from: nil).y, height: bounds.height) {
+            beginDragOut(event)
+            return
+        }
         let minX = min(max(x - drag.grab, -dragged.frame.width / 2), bounds.width - dragged.frame.width / 2)
         dragged.setFrameOrigin(NSPoint(x: minX, y: dragged.frame.minY))
         let target = Self.layout.dropIndex(forMiddle: minX + dragged.frame.width / 2 + scroll, count: views.count,
@@ -193,6 +233,98 @@ final class TabBarView: NSView, NSTextFieldDelegate {
             onMove?(drag.index, drag.target)
         }
         place(animated: true)
+    }
+
+    /// The tab under a point in the bar, if any.
+    func index(at point: NSPoint) -> Int? {
+        views.indices.first { !views[$0].isHidden && views[$0].frame.contains(point) }
+    }
+
+    // MARK: - Dragging a tab out, and in from elsewhere
+
+    /// Hands the dragged tab to a system drag carrying its id, so it can be
+    /// dropped on any window's bar (or outside them all, for a new window).
+    private func beginDragOut(_ event: NSEvent) {
+        guard let drag, items.indices.contains(drag.index) else { return }
+        let index = drag.index
+        let view = views[index]
+        self.drag = nil
+        press = nil
+        NSCursor.pop()
+        let item = NSPasteboardItem()
+        item.setString(items[index].id.uuidString, forType: .ghostgridTab)
+        let dragging = NSDraggingItem(pasteboardWriter: item)
+        dragging.setDraggingFrame(view.frame, contents: view.dragImage())
+        outgoing = index
+        view.isHidden = true
+        place(animated: true)
+        onDragOutChange?(true)
+        let session = beginDraggingSession(with: [dragging], event: event, source: self)
+        session.animatesToStartingPositionsOnCancelOrFail = false
+    }
+
+    func draggingSession(_: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        context == .withinApplication ? .move : []
+    }
+
+    /// Whether a tab is being dragged out of this bar right now (its window
+    /// must stay open until the drag is over).
+    var isDraggingOut: Bool { outgoing != nil }
+
+    func draggingSession(_: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+        guard let index = outgoing else { return }
+        outgoing = nil
+        views.forEach { $0.isHidden = false }
+        needsLayout = true
+        // Let go outside every tab bar (not cancelled with Escape): a
+        // window of its own. After this callback returns, since this bar's
+        // window may then close.
+        let event = NSApp.currentEvent
+        let tearOff = operation.isEmpty && !(event?.type == .keyDown && event?.keyCode == 53)
+        DispatchQueue.main.async { [onDragOutChange, onTearOff] in
+            onDragOutChange?(false)
+            if tearOff { onTearOff?(index, screenPoint) }
+        }
+    }
+
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        draggingUpdated(sender)
+    }
+
+    override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        guard sender.draggingPasteboard.string(forType: .ghostgridTab) != nil else { return [] }
+        let x = convert(sender.draggingLocation, from: nil).x + scroll
+        let count = views.count - (outgoing == nil ? 0 : 1)
+        let index = Self.layout.insertIndex(forX: x, count: count, width: bounds.width)
+        if index != incoming {
+            incoming = index
+            place(animated: true)
+        }
+        return .move
+    }
+
+    override func draggingExited(_: (any NSDraggingInfo)?) {
+        incoming = nil
+        place(animated: true)
+    }
+
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        defer {
+            incoming = nil
+            needsLayout = true
+        }
+        guard let string = sender.draggingPasteboard.string(forType: .ghostgridTab),
+              let id = UUID(uuidString: string), let index = incoming
+        else { return false }
+        onDropTab?(id, index)
+        return true
+    }
+
+    override func draggingEnded(_: any NSDraggingInfo) {
+        if incoming != nil {
+            incoming = nil
+            place(animated: true)
+        }
     }
 
     fileprivate func closeClicked(_ view: TabItemView) {
@@ -316,8 +448,30 @@ final class TabBarView: NSView, NSTextFieldDelegate {
 final class TabItemView: NSView {
     fileprivate weak var bar: TabBarView?
     fileprivate var index = 0
-    var item = TabBarView.Item(title: "", selected: false) {
-        didSet { if item != oldValue { restyle() } }
+    var item = TabBarView.Item(id: UUID(), title: "", selected: false) {
+        didSet {
+            // Another tab now in this slot (after a move): hover is about
+            // where the pointer is now, not where it was.
+            if item.id != oldValue.id { hovering = pointerInside }
+            if item != oldValue { restyle() }
+        }
+    }
+
+    private var pointerInside: Bool {
+        guard let window else { return false }
+        return bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil))
+    }
+
+    /// Moving under or away from a still pointer sends no enter or exit, so
+    /// hover follows the tab's place (frames are set to where they end up,
+    /// even while animating there).
+    override func setFrameOrigin(_ newOrigin: NSPoint) {
+        super.setFrameOrigin(newOrigin)
+        hovering = pointerInside
+    }
+    /// A dragged pane would move to this tab.
+    var isPaneTarget = false {
+        didSet { if isPaneTarget != oldValue { restyle() } }
     }
 
     private let label = NSTextField(labelWithString: "")
@@ -353,6 +507,17 @@ final class TabItemView: NSView {
 
     override var isFlipped: Bool { true }
     override var mouseDownCanMoveWindow: Bool { false }
+    /// Grabbing a tab in an inactive window drags the tab (see TabBarView).
+    override func acceptsFirstMouse(for _: NSEvent?) -> Bool { true }
+
+    /// The tab takes every click on it except on its close button. The
+    /// title is a label, and a label in the titlebar lets a press move the
+    /// window: the window server asks the view under the pointer, so
+    /// dragging a tab by its title dragged the window instead.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let hit = super.hitTest(point) else { return nil }
+        return hit === closeButton ? hit : self
+    }
 
     override func layout() {
         super.layout()
@@ -388,6 +553,25 @@ final class TabItemView: NSView {
 
     @objc private func closeClicked() { bar?.closeClicked(self) }
 
+    /// What follows the pointer while the tab is dragged out of the bar.
+    func dragImage() -> NSImage {
+        let size = bounds.size
+        let color = item.color.map { NSColor(tab: $0).withAlphaComponent(0.95) } ?? Palette.card.withAlphaComponent(0.95)
+        let textColor = item.color == nil ? Palette.text : Palette.card
+        let title = item.title
+        return NSImage(size: size, flipped: false) { rect in
+            color.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: 7, yRadius: 7).fill()
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 12, weight: .medium), .foregroundColor: textColor,
+            ]
+            let text = NSAttributedString(string: title, attributes: attributes)
+            let textSize = text.size()
+            text.draw(at: NSPoint(x: (rect.width - textSize.width) / 2, y: (rect.height - textSize.height) / 2))
+            return true
+        }
+    }
+
     private func restyle() {
         label.stringValue = item.title
         toolTip = item.title
@@ -409,6 +593,8 @@ final class TabItemView: NSView {
             text = Palette.subtext
         }
         layer?.backgroundColor = background.cgColor
+        layer?.borderWidth = isPaneTarget ? 2 : 0
+        layer?.borderColor = Palette.flash.cgColor
         label.textColor = text
         closeButton.contentTintColor = text
         closeButton.isHidden = !(hovering || item.selected)
@@ -416,4 +602,9 @@ final class TabItemView: NSView {
         badge.isHidden = item.selected || item.badge == nil
         needsLayout = true
     }
+}
+
+extension NSPasteboard.PasteboardType {
+    /// A tab being dragged between ghostgrid windows: its id.
+    static let ghostgridTab = NSPasteboard.PasteboardType("com.brettbergin.ghostgrid.tab")
 }
