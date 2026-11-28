@@ -170,7 +170,15 @@ two tabs, or when the only one has a name or color (in full screen, above
 the panes). Tabs share the bar's width and it scrolls when they no longer
 fit.
 
-- Click a tab to show it; drag it along the bar to move it.
+- Click a tab to show it; drag it along the bar to move it. Drag it off
+  the bar onto another window's tab bar to move it there, or let go
+  anywhere else for a window of its own (Tab > Move Tab to New Window does
+  the same). While a tab or pane is dragged, every window shows its bar, so
+  one with a single tab can take it too.
+- Drag a pane by its header onto a tab in any window's bar to move it into
+  that tab; the tab comes to the front. A tab whose last pane leaves
+  closes, and a window whose last tab leaves closes.
+- Moving a tab or pane keeps its shells running, with their scrollback.
 - Double-click a tab (or Tab > Rename Tab...) to name it: Return keeps the
   name, Escape cancels, and an empty name goes back to "Tab N". Unnamed
   tabs are numbered by position, matching their Cmd+N shortcut.

@@ -101,8 +101,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             self?.scheduleSave()
         }
         window.onChange = { [weak self] in self?.scheduleSave() }
+        window.allWindows = { [weak self] in self?.windowsFrontToBack ?? [] }
+        window.onTearOff = { [weak self] source, index, point in self?.tearOff(from: source, at: index, to: point) }
         windows.append(window)
         return window
+    }
+
+    /// The windows, front to back (where a dragged tab or pane lands when
+    /// windows overlap).
+    private var windowsFrontToBack: [GridWindowController] {
+        let ordered = NSApp.orderedWindows.compactMap { window in windows.first { $0.window === window } }
+        return ordered + windows.filter { controller in !ordered.contains { $0 === controller } }
+    }
+
+    /// A tab dragged out of every tab bar, or Tab > Move Tab to New Window:
+    /// a window of its own where it was let go (offset from its old window
+    /// from the menu), its shells still running. The window it leaves closes
+    /// if that was its last tab.
+    private func tearOff(from source: GridWindowController, at index: Int, to point: NSPoint?) {
+        guard source.tabs.tabs.indices.contains(index), var frame = source.window?.frame else { return }
+        if let point {
+            // The tab bar's start under the pointer.
+            frame.origin = NSPoint(x: point.x - 140, y: point.y + 16 - frame.height)
+        } else {
+            frame.origin = NSPoint(x: frame.minX + 30, y: frame.minY - 30)
+        }
+        let window = makeWindow()
+        window.window?.setFrame(SessionPolicy.fit(frame, screens: NSScreen.screens.map(\.visibleFrame)) ?? frame, display: false)
+        window.showWindow(nil)
+        guard let tab = source.detachTab(at: index) else {
+            window.close()
+            return
+        }
+        window.attachTab(tab, at: 0)
+        source.closeIfEmpty()
     }
 
     // MARK: - Session restore (Ghostty's window-save-state)
@@ -185,6 +217,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         guard let window = currentWindow else { return }
         window.closeTab(at: window.tabs.selected)
     }
+
+    @objc func moveTabToOwnWindow(_: Any?) { currentWindow?.moveSelectedTabToNewWindow() }
 
     @objc func closeOtherTabs(_: Any?) {
         guard let window = currentWindow else { return }
@@ -277,7 +311,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             item.state = (color.flatMap { TabColor.allCases.firstIndex(of: $0) } ?? -1) == item.tag ? .on : .off
         }
         if item.action == #selector(closeOtherTabs(_:)) || item.action == #selector(nextTab(_:))
-            || item.action == #selector(previousTab(_:)) {
+            || item.action == #selector(previousTab(_:)) || item.action == #selector(moveTabToOwnWindow(_:)) {
             return (currentWindow?.tabs.count ?? 0) > 1
         }
         return true

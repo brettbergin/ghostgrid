@@ -163,3 +163,29 @@ struct TabBarPlacementTests {
         #expect(placed.gridTop == 0)
     }
 }
+
+/// Contract for dropping a tab from elsewhere onto a tab bar: it goes in
+/// before the first tab whose middle is right of the pointer (after the
+/// last one past them all). A tab dragged within its own bar leaves it
+/// once the pointer is well above or below the bar.
+struct TabBarDropTests {
+    let layout = TabBarLayout(minimumWidth: 100, maximumWidth: 200, spacing: 4)
+
+    @Test func anArrivingTabGoesBeforeTheFirstTabRightOfThePointer() {
+        // Three 150-point tabs at 0, 154, 308 (middles 75, 229, 383).
+        #expect(layout.insertIndex(forX: 10, count: 3, width: 460) == 0)
+        #expect(layout.insertIndex(forX: 80, count: 3, width: 460) == 1)
+        #expect(layout.insertIndex(forX: 228, count: 3, width: 460) == 1)
+        #expect(layout.insertIndex(forX: 230, count: 3, width: 460) == 2)
+        #expect(layout.insertIndex(forX: 999, count: 3, width: 460) == 3)
+        #expect(layout.insertIndex(forX: 50, count: 0, width: 460) == 0)
+    }
+
+    @Test func aDraggedTabLeavesTheBarWellAboveOrBelowIt() {
+        #expect(!TabBarLayout.leavesBar(y: 14, height: 28))
+        #expect(!TabBarLayout.leavesBar(y: -20, height: 28))
+        #expect(!TabBarLayout.leavesBar(y: 48, height: 28))
+        #expect(TabBarLayout.leavesBar(y: -30, height: 28))
+        #expect(TabBarLayout.leavesBar(y: 60, height: 28))
+    }
+}
